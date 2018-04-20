@@ -200,6 +200,11 @@ var expectedStats = map[string]int{
 	"http_mixer_filter.total_report_calls":                2,
 }
 
+//TODO (lei-tang):
+// - assign a port for authn test.
+// - inject jwt payload from jwt-auth filter
+// - add istio-authn filter to the filter chain
+// - compare the authn attributes in the actual report matches those in the expected report
 func TestCheckReportAttributes(t *testing.T) {
 	s := env.NewTestSetup(env.CheckReportAttributesTest, t)
 	env.SetStatsUpdateInterval(s.MfConfig(), 1)
@@ -219,12 +224,12 @@ func TestCheckReportAttributes(t *testing.T) {
 	s.VerifyReport(tag, reportAttributesOkGet)
 
 	// Issues a POST request.
-	tag = "OKPost"
-	if _, _, err := env.HTTPPost(url, "text/plain", "Hello World!"); err != nil {
-		t.Errorf("Failed in request %s: %v", tag, err)
-	}
-	s.VerifyCheck(tag, checkAttributesOkPost)
-	s.VerifyReport(tag, reportAttributesOkPost)
+	//tag = "OKPost"
+	//if _, _, err := env.HTTPPost(url, "text/plain", "Hello World!"); err != nil {
+	//	t.Errorf("Failed in request %s: %v", tag, err)
+	//}
+	//s.VerifyCheck(tag, checkAttributesOkPost)
+	//s.VerifyReport(tag, reportAttributesOkPost)
 
 	//if respStats, err := s.WaitForStatsUpdateAndGetStats(2); err == nil {
 	//	s.VerifyStats(respStats, expectedStats)
