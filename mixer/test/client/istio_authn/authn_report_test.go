@@ -188,6 +188,192 @@ const reportAttributesOkPost = `
 }
 `
 
+// TODO: convert to v2, real clients use bootstrap v2 and all configs are switching !!!
+// The envoy config template with Istio authn filter
+const envoyConfTempl = `
+{
+  "listeners": [
+    {
+      "address": "tcp://0.0.0.0:{{.ServerPort}}",
+      "bind_to_port": true,
+      "filters": [
+        {
+          "type": "read",
+          "name": "http_connection_manager",
+          "config": {
+            "codec_type": "auto",
+            "stat_prefix": "ingress_http",
+            "route_config": {
+              "virtual_hosts": [
+                {
+                  "name": "backend",
+                  "domains": ["*"],
+                  "routes": [
+                    {
+                      "timeout_ms": 0,
+                      "prefix": "/",
+                      "cluster": "service1",
+                      "opaque_config": {
+{{.MixerRouteFlags}}
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "access_log": [
+              {
+                "path": "{{.AccessLog}}"
+              }
+            ],
+            "filters": [
+{{.FaultFilter}}
+              {
+                "type": "decoder",
+                "name": "mixer",
+                "config": {
+{{.ServerConfig}}
+                }
+              },
+              {
+                "type": "decoder",
+                "name": "router",
+                "config": {}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "address": "tcp://0.0.0.0:{{.ClientPort}}",
+      "bind_to_port": true,
+      "filters": [
+        {
+          "type": "read",
+          "name": "http_connection_manager",
+          "config": {
+            "codec_type": "auto",
+            "stat_prefix": "ingress_http",
+            "route_config": {
+              "virtual_hosts": [
+                {
+                  "name": "backend",
+                  "domains": ["*"],
+                  "routes": [
+                    {
+                      "timeout_ms": 0,
+                      "prefix": "/",
+                      "cluster": "service2",
+                      "opaque_config": {
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            "access_log": [
+              {
+                "path": "{{.AccessLog}}"
+              }
+            ],
+            "filters": [
+              {
+                "type": "decoder",
+                "name": "mixer",
+                "config": {
+{{.ClientConfig}}
+                }
+              },
+              {
+                "type": "decoder",
+                "name": "router",
+                "config": {}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "address": "tcp://0.0.0.0:{{.TCPProxyPort}}",
+      "bind_to_port": true,
+      "filters": [
+        {
+          "type": "both",
+          "name": "mixer",
+          "config": {
+{{.TCPServerConfig}}
+          }
+        },
+        {
+          "type": "read",
+          "name": "tcp_proxy",
+          "config": {
+            "stat_prefix": "tcp",
+            "route_config": {
+              "routes": [
+                {
+                  "cluster": "service1"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "admin": {
+    "access_log_path": "/dev/stdout",
+    "address": "tcp://0.0.0.0:{{.AdminPort}}"
+  },
+  "cluster_manager": {
+    "clusters": [
+      {
+        "name": "service1",
+        "connect_timeout_ms": 5000,
+        "type": "strict_dns",
+        "lb_type": "round_robin",
+        "hosts": [
+          {
+            "url": "tcp://{{.Backend}}"
+          }
+        ]
+      },
+      {
+        "name": "service2",
+        "connect_timeout_ms": 5000,
+        "type": "strict_dns",
+        "lb_type": "round_robin",
+        "hosts": [
+          {
+            "url": "tcp://localhost:{{.ServerPort}}"
+          }
+        ]
+      },
+      {
+        "name": "mixer_server",
+        "connect_timeout_ms": 5000,
+        "type": "strict_dns",
+	"circuit_breakers": {
+           "default": {
+	      "max_pending_requests": 10000,
+	      "max_requests": 10000
+            }
+	},
+        "lb_type": "round_robin",
+        "features": "http2",
+        "hosts": [
+          {
+            "url": "tcp://{{.MixerServer}}"
+          }
+        ]
+      }
+    ]
+  }
+}
+`
+
 // Stats in Envoy proxy.
 var expectedStats = map[string]int{
 	"http_mixer_filter.total_blocking_remote_check_calls": 2,
@@ -206,7 +392,8 @@ var expectedStats = map[string]int{
 // - add istio-authn filter to the filter chain
 // - compare the authn attributes in the actual report matches those in the expected report
 func TestCheckReportAttributes(t *testing.T) {
-	s := env.NewTestSetup(env.CheckReportAttributesTest, t)
+	s := env.NewTestSetupWithEnvoyConfig(env.CheckReportAttributesTest, envoyConfTempl, t)
+
 	env.SetStatsUpdateInterval(s.MfConfig(), 1)
 	if err := s.SetUp(); err != nil {
 		t.Fatalf("Failed to setup test: %v", err)
