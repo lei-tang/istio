@@ -16,6 +16,7 @@ package checkReport
 
 import (
 	"fmt"
+	"encoding/base64"
 	"testing"
 
 	"istio.io/istio/mixer/test/client/env"
@@ -89,7 +90,7 @@ const reportAttributesOkGet = `
      "x-request-id": "*"
   },
   "request.size": 0,
-  "request.total_size": 306,
+  "request.total_size": 517,
   "response.total_size": 99,
   "response.time": "*",
   "response.size": 0,
@@ -100,6 +101,13 @@ const reportAttributesOkGet = `
      "content-length": "0",
      ":status": "200",
      "server": "envoy"
+  },
+  "request.auth.audiences": "aud1",
+  "request.auth.claims": {
+     "iss": "issuer@foo.com", 
+     "sub": "sub@foo.com",
+     "aud": "aud1",
+     "some-other-string-claims": "some-claims-kept"
   }
 }
 `
@@ -228,6 +236,25 @@ const envoyConfTempl = `
             ],
             "filters": [
 {{.FaultFilter}}
+              {
+                "type": "decoder",
+                "name": "istio_authn",
+                "config": {
+                  "policy": {
+                    "origins": [
+                      {
+                        "jwt": {
+                          "issuer": "issuer@foo.com",
+                          "jwks_uri": "http://localhost:8081/"
+                        }
+                      }
+                    ]
+                  },
+                  "jwt_output_payload_locations": {
+                    "issuer@foo.com": "sec-istio-auth-jwt-output"
+                  }
+                }
+              }, 
               {
                 "type": "decoder",
                 "name": "mixer",
@@ -374,6 +401,18 @@ const envoyConfTempl = `
 }
 `
 
+const secIstioAuthUserInfoHeaderKey = "sec-istio-auth-jwt-output"
+
+const secIstioAuthUserinfoHeaderValue = `
+{
+  "iss": "issuer@foo.com",
+  "sub": "sub@foo.com",
+  "aud": "aud1",
+  "non-string-will-be-ignored": 1512754205,
+  "some-other-string-claims": "some-claims-kept"
+}
+`
+
 // Stats in Envoy proxy.
 var expectedStats = map[string]int{
 	"http_mixer_filter.total_blocking_remote_check_calls": 2,
@@ -391,7 +430,7 @@ var expectedStats = map[string]int{
 // - inject jwt payload from jwt-auth filter
 // - add istio-authn filter to the filter chain
 // - compare the authn attributes in the actual report matches those in the expected report
-func TestCheckReportAttributes(t *testing.T) {
+func TestAuthnCheckReportAttributes(t *testing.T) {
 	s := env.NewTestSetupWithEnvoyConfig(env.CheckReportAttributesTest, envoyConfTempl, t)
 
 	env.SetStatsUpdateInterval(s.MfConfig(), 1)
@@ -404,10 +443,18 @@ func TestCheckReportAttributes(t *testing.T) {
 
 	// Issues a GET echo request with 0 size body
 	tag := "OKGet"
-	if _, _, err := env.HTTPGet(url); err != nil {
+
+
+	headers := map[string]string{}
+	headers[secIstioAuthUserInfoHeaderKey] =
+		base64.StdEncoding.EncodeToString([]byte(secIstioAuthUserinfoHeaderValue))
+
+	//headers[env.FailHeader] = "Yes"
+	//if _, _, err := env.HTTPGet(url); err != nil {
+	if _, _, err := env.HTTPGetWithHeaders(url, headers); err != nil {
 		t.Errorf("Failed in request %s: %v", tag, err)
 	}
-	s.VerifyCheck(tag, checkAttributesOkGet)
+	//s.VerifyCheck(tag, checkAttributesOkGet)
 	s.VerifyReport(tag, reportAttributesOkGet)
 
 	// Issues a POST request.
