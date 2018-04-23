@@ -1,4 +1,4 @@
-// Copyright 2017 Istio Authors. All Rights Reserved.
+// Copyright 2018 Istio Authors. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,48 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package checkReport
+package istioAuthn
 
 import (
-	"fmt"
 	"encoding/base64"
+	"fmt"
 	"testing"
 
 	"istio.io/istio/mixer/test/client/env"
 )
-
-// Check attributes from a good GET request
-const checkAttributesOkGet = `
-{
-  "context.protocol": "http",
-  "mesh1.ip": "[1 1 1 1]",
-  "mesh2.ip": "[0 0 0 0 0 0 0 0 0 0 255 255 204 152 189 116]",
-  "mesh3.ip": "[0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 8]",
-  "request.host": "*",
-  "request.path": "/echo",
-  "request.time": "*",
-  "request.useragent": "Go-http-client/1.1",
-  "request.method": "GET",
-  "request.scheme": "http",
-  "source.uid": "POD11",
-  "source.namespace": "XYZ11",
-  "source.ip": "[127 0 0 1]",
-  "source.port": "*",
-  "target.name": "target-name",
-  "target.user": "target-user",
-  "target.uid": "POD222",
-  "target.namespace": "XYZ222",
-  "connection.mtls": false,
-  "request.headers": {
-     ":method": "GET",
-     ":path": "/echo",
-     ":authority": "*",
-     "x-forwarded-proto": "http",
-     "x-istio-attributes": "-",
-     "x-request-id": "*"
-  }
-}
-`
 
 // Report attributes from a good GET request
 const reportAttributesOkGet = `
@@ -108,90 +75,6 @@ const reportAttributesOkGet = `
      "sub": "sub@foo.com",
      "aud": "aud1",
      "some-other-string-claims": "some-claims-kept"
-  }
-}
-`
-
-// Check attributes from a good POST request
-const checkAttributesOkPost = `
-{
-  "context.protocol": "http",
-  "mesh1.ip": "[1 1 1 1]",
-  "mesh2.ip": "[0 0 0 0 0 0 0 0 0 0 255 255 204 152 189 116]",
-  "mesh3.ip": "[0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 8]",
-  "request.host": "*",
-  "request.path": "/echo",
-  "request.time": "*",
-  "request.useragent": "Go-http-client/1.1",
-  "request.method": "POST",
-  "request.scheme": "http",
-  "source.uid": "POD11",
-  "source.namespace": "XYZ11",
-  "source.ip": "[127 0 0 1]",
-  "source.port": "*",
-  "target.name": "target-name",
-  "target.user": "target-user",
-  "target.uid": "POD222",
-  "target.namespace": "XYZ222",
-  "connection.mtls": false,
-  "request.headers": {
-     ":method": "POST",
-     ":path": "/echo",
-     ":authority": "*",
-     "x-forwarded-proto": "http",
-     "x-istio-attributes": "-",
-     "x-request-id": "*"
-  }
-}
-`
-
-// Report attributes from a good POST request
-const reportAttributesOkPost = `
-{
-  "context.protocol": "http",
-  "mesh1.ip": "[1 1 1 1]",
-  "mesh2.ip": "[0 0 0 0 0 0 0 0 0 0 255 255 204 152 189 116]",
-  "mesh3.ip": "[0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 8]",
-  "request.host": "*",
-  "request.path": "/echo",
-  "request.time": "*",
-  "request.useragent": "Go-http-client/1.1",
-  "request.method": "POST",
-  "request.scheme": "http",
-  "source.uid": "POD11",
-  "source.namespace": "XYZ11",
-  "source.ip": "[127 0 0 1]",
-  "source.port": "*",
-  "destination.ip": "[127 0 0 1]",
-  "destination.port": "*",
-  "target.name": "target-name",
-  "target.user": "target-user",
-  "target.uid": "POD222",
-  "target.namespace": "XYZ222",
-  "connection.mtls": false,
-  "check.cache_hit": false,
-  "quota.cache_hit": false,
-  "request.headers": {
-     ":method": "POST",
-     ":path": "/echo",
-     ":authority": "*",
-     "x-forwarded-proto": "http",
-     "x-istio-attributes": "-",
-     "x-request-id": "*"
-  },
-  "request.size": 12,
-  "request.total_size": 342,
-  "response.total_size": 134,
-  "response.time": "*",
-  "response.size": 12,
-  "response.duration": "*",
-  "response.code": 200,
-  "response.headers": {
-     "date": "*",
-     "content-type": "text/plain",
-     "content-length": "12",
-     ":status": "200",
-     "server": "envoy"
   }
 }
 `
@@ -413,25 +296,8 @@ const secIstioAuthUserinfoHeaderValue = `
 }
 `
 
-// Stats in Envoy proxy.
-var expectedStats = map[string]int{
-	"http_mixer_filter.total_blocking_remote_check_calls": 2,
-	"http_mixer_filter.total_blocking_remote_quota_calls": 0,
-	"http_mixer_filter.total_check_calls":                 2,
-	"http_mixer_filter.total_quota_calls":                 0,
-	"http_mixer_filter.total_remote_check_calls":          2,
-	"http_mixer_filter.total_remote_quota_calls":          0,
-	"http_mixer_filter.total_remote_report_calls":         2,
-	"http_mixer_filter.total_report_calls":                2,
-}
-
-//TODO (lei-tang):
-// - assign a port for authn test.
-// - inject jwt payload from jwt-auth filter
-// - add istio-authn filter to the filter chain
-// - compare the authn attributes in the actual report matches those in the expected report
-func TestAuthnCheckReportAttributes(t *testing.T) {
-	s := env.NewTestSetupWithEnvoyConfig(env.CheckReportAttributesTest, envoyConfTempl, t)
+func TestAuthnReportAttributes(t *testing.T) {
+	s := env.NewTestSetupWithEnvoyConfig(env.ReportIstioAuthnAttributesTest, envoyConfTempl, t)
 
 	env.SetStatsUpdateInterval(s.MfConfig(), 1)
 	if err := s.SetUp(); err != nil {
@@ -444,42 +310,14 @@ func TestAuthnCheckReportAttributes(t *testing.T) {
 	// Issues a GET echo request with 0 size body
 	tag := "OKGet"
 
-
+	// Add jwt_auth header to be consumed by Istio authn filter
 	headers := map[string]string{}
 	headers[secIstioAuthUserInfoHeaderKey] =
 		base64.StdEncoding.EncodeToString([]byte(secIstioAuthUserinfoHeaderValue))
 
-	//headers[env.FailHeader] = "Yes"
-	//if _, _, err := env.HTTPGet(url); err != nil {
 	if _, _, err := env.HTTPGetWithHeaders(url, headers); err != nil {
 		t.Errorf("Failed in request %s: %v", tag, err)
 	}
-	//s.VerifyCheck(tag, checkAttributesOkGet)
+	// Compare the authn attributes in the actual report matches those in the expected report
 	s.VerifyReport(tag, reportAttributesOkGet)
-
-	// Issues a POST request.
-	//tag = "OKPost"
-	//if _, _, err := env.HTTPPost(url, "text/plain", "Hello World!"); err != nil {
-	//	t.Errorf("Failed in request %s: %v", tag, err)
-	//}
-	//s.VerifyCheck(tag, checkAttributesOkPost)
-	//s.VerifyReport(tag, reportAttributesOkPost)
-
-	//if respStats, err := s.WaitForStatsUpdateAndGetStats(2); err == nil {
-	//	s.VerifyStats(respStats, expectedStats)
-	//} else {
-	//	t.Errorf("Failed to get stats from Envoy %v", err)
-	//}
-
-	//// Verify that Mixer HTTP filter works properly when we change config version to V1 at Envoy.
-	//s.SetMixerFilterConfVersion(env.MixerFilterConfigV1)
-	//s.ReStartEnvoy()
-	//
-	//// Issues a POST request.
-	//url = fmt.Sprintf("http://localhost:%d/echo", s.Ports().ClientProxyPort)
-	//if _, _, err := env.HTTPPost(url, "text/plain", "Hello World!"); err != nil {
-	//	t.Errorf("Failed in request %s: %v", tag, err)
-	//}
-	//s.VerifyCheck(tag, checkAttributesOkPost)
-	//s.VerifyReport(tag, reportAttributesOkPost)
 }
