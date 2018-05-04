@@ -31,7 +31,7 @@ import (
 // Config for testing purpose
 const (
 	// Whether running these tests in the release 0.8
-	enableForRelease = false
+	enableForRelease = true
 )
 
 // Config for testing purpose

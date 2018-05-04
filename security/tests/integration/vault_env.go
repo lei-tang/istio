@@ -96,6 +96,19 @@ func (env *VaultTestEnv) GetComponents() []framework.Component {
 				},
 				map[string]string{},
 			),
+			//NewKubernetesService(
+			//	env.ClientSet,
+			//	env.NameSpace,
+			//	vaultService,
+			//	v1.ServiceTypeClusterIP,
+			//	vaultPort,
+			//	map[string]string{
+			//		"pod-group": vaultName+ podGroupPostfix,
+			//	},
+			//	map[string]string{
+			//		kube.KubeServiceAccountsOnVMAnnotation: "nodeagent.google.com",
+			//	},
+			//),
 		}
 	}
 	return env.comps
@@ -123,4 +136,9 @@ func (env *VaultTestEnv) Cleanup() error {
 // GetVaultIPAddress returns the external LoadBalancer IP address of the Vault testing service
 func (env *VaultTestEnv) GetVaultIPAddress() (string, error) {
 	return getServiceExternalIPAddress(env.ClientSet, env.NameSpace, vaultService)
+}
+
+// GetVaultClusterIPAddress returns the clusterIP address of the Vault testing service
+func (env *VaultTestEnv) GetVaultClusterIPAddress() (string, error) {
+	return getServiceClusterIPAddress(env.ClientSet, env.NameSpace, vaultService)
 }
