@@ -268,6 +268,8 @@ type IstioConfigStore interface {
 	// have validation at submitting time to prevent this scenario from happening)
 	AuthenticationPolicyByDestination(service *Service, port *Port) *Config
 
+	AuthenticationPolicyByWorkload(workload *NetworkEndpoint) *Config
+
 	// ServiceRoles selects ServiceRoles in the specified namespace.
 	ServiceRoles(namespace string) []Config
 
@@ -791,6 +793,64 @@ func (store *istioConfigStore) QuotaSpecByDestination(instance *ServiceInstance)
 		log.Warnf("Some matched QuotaSpecs were not found: %v", refs)
 	}
 	return out
+}
+
+func (store *istioConfigStore) AuthenticationPolicyByWorkload(workload *NetworkEndpoint) *Config {
+	specs, err := store.List(AuthenticationPolicy.Type, workload.Namespace)
+	if err != nil {
+		return nil
+	}
+	var out Config
+	currentMatchLevel := 0
+	for _, spec := range specs {
+		policy := spec.Spec.(*authn.Policy)
+		matchLevel := 0
+		if len(policy.Targets) != 0 {
+			log.Debugf("Ignore policy using deprecated targets: %s.%s", spec.Name, spec.Namespace)
+			continue
+		}
+		if policy.Selector != nil {
+			policySelector := Labels(policy.Selector.MatchLabels)
+			if !workload.Labels.SubsetOf(policySelector) {
+				continue
+			}
+			if len(policy.Selector.Ports) > 0 {
+				for _, port := range policy.Selector.Ports {
+					if port == uint32(workload.Port) {
+						matchLevel = 4
+						break
+					}
+				}
+			} else {
+				matchLevel = 3
+			}
+		} else {
+			// Namespace-level policy.
+			matchLevel = 2
+		}
+		// Swap output policy that is match in more specific scope.
+		if matchLevel > currentMatchLevel {
+			currentMatchLevel = matchLevel
+			out = spec
+		}
+	}
+	// Non-zero currentMatchLevel implies authentication policy was found for the given host.
+	if currentMatchLevel != 0 {
+		return &out
+	}
+	// Reach here if no authentication policy found in service or namespace level; check for
+	// cluster-scoped (global) policy.
+	// Note: to avoid multiple global policy, we restrict that only the one with name equals to
+	// `DefaultAuthenticationPolicyName` ("default") will be used. Also, targets spec should be empty.
+	if specs, err := store.List(AuthenticationMeshPolicy.Type, ""); err == nil {
+		for _, spec := range specs {
+			if spec.Name == DefaultAuthenticationPolicyName {
+				return &spec
+			}
+		}
+	}
+
+	return nil
 }
 
 func (store *istioConfigStore) AuthenticationPolicyByDestination(service *Service, port *Port) *Config {

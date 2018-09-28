@@ -100,6 +100,7 @@ func (configgen *ConfigGeneratorImpl) BuildListeners(env *model.Environment, nod
 func (configgen *ConfigGeneratorImpl) buildSidecarListeners(env *model.Environment, node *model.Proxy,
 	push *model.PushContext) ([]*xdsapi.Listener, error) {
 
+	fmt.Printf("node.ID=%s, metadata=%v\n", node.ID, node.Metadata)
 	mesh := env.Mesh
 	managementPorts := env.ManagementPorts(node.IPAddress)
 

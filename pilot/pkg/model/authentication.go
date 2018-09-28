@@ -22,7 +22,6 @@ import (
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/auth"
 	"github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	"github.com/gogo/protobuf/types"
-
 	authn "istio.io/api/authentication/v1alpha1"
 )
 
@@ -41,6 +40,18 @@ var JwtKeyResolver = newJwksResolver(JwtPubKeyExpireDuration, JwtPubKeyEvictionD
 // service specified by hostname and port, if defined. It also tries to resolve JWKS URI if necessary.
 func GetConsolidateAuthenticationPolicy(store IstioConfigStore, service *Service, port *Port) *authn.Policy {
 	config := store.AuthenticationPolicyByDestination(service, port)
+	if config != nil {
+		policy := config.Spec.(*authn.Policy)
+		if err := JwtKeyResolver.SetAuthenticationPolicyJwksURIs(policy); err == nil {
+			return policy
+		}
+	}
+
+	return nil
+}
+
+func GetConsolidateAuthenticationPolicyForWorkload(store IstioConfigStore, workload *NetworkEndpoint) *authn.Policy {
+	config := store.AuthenticationPolicyByWorkload(workload)
 	if config != nil {
 		policy := config.Spec.(*authn.Policy)
 		if err := JwtKeyResolver.SetAuthenticationPolicyJwksURIs(policy); err == nil {

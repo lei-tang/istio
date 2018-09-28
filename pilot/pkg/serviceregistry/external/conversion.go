@@ -128,6 +128,8 @@ func convertEndpoint(service *model.Service, servicePort *networking.Port,
 			Address:     addr,
 			Family:      family,
 			Port:        int(instancePort),
+			Namespace:   model.IstioDefaultConfigNamespace,
+			Labels:      endpoint.Labels,
 			ServicePort: convertPort(servicePort),
 		},
 		// TODO AvailabilityZone, ServiceAccount

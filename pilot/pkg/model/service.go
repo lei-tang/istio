@@ -286,6 +286,15 @@ type NetworkEndpoint struct {
 	// Ignored for `AddressFamilyUnix`.
 	Port int
 
+	// Namespace associated with the network endpoint.
+	Namespace string
+
+	// Service account that own network endpoint.
+	ServiceAccount string
+
+	// Labels associated with the network endpoint.
+	Labels Labels
+
 	// Port declaration from the service declaration This is the port for
 	// the service associated with this instance (e.g.,
 	// catalog.mystore.com)

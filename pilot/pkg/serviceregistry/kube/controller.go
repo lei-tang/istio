@@ -377,11 +377,12 @@ func (c *Controller) InstancesByPort(hostname model.Hostname, reqSvcPort int,
 					}
 
 					pod, exists := c.pods.getPodByIP(ea.IP)
-					az, sa, uid := "", "", ""
+					az, sa, uid, podNamespace := "", "", "", ""
 					if exists {
 						az, _ = c.GetPodAZ(pod)
 						sa = kubeToIstioServiceAccount(pod.Spec.ServiceAccountName, pod.GetNamespace(), c.domainSuffix)
 						uid = fmt.Sprintf("kubernetes://%s.%s", pod.Name, pod.Namespace)
+						podNamespace = pod.Namespace
 					}
 
 					// identify the port by name. K8S EndpointPort uses the service port name
@@ -391,10 +392,13 @@ func (c *Controller) InstancesByPort(hostname model.Hostname, reqSvcPort int,
 							svcPortEntry.Name == port.Name {
 							out = append(out, &model.ServiceInstance{
 								Endpoint: model.NetworkEndpoint{
-									Address:     ea.IP,
-									Port:        int(port.Port),
-									ServicePort: svcPortEntry,
-									UID:         uid,
+									Address:        ea.IP,
+									Port:           int(port.Port),
+									ServicePort:    svcPortEntry,
+									UID:            uid,
+									Namespace:      podNamespace,
+									ServiceAccount: sa,
+									Labels:         labels,
 								},
 								Service:          svc,
 								Labels:           labels,
@@ -415,6 +419,8 @@ func (c *Controller) InstancesByPort(hostname model.Hostname, reqSvcPort int,
 func (c *Controller) GetProxyServiceInstances(proxy *model.Proxy) ([]*model.ServiceInstance, error) {
 	var out []*model.ServiceInstance
 	proxyIP := proxy.IPAddress
+	labels, _ := c.pods.labelsByIP(proxyIP)
+	fmt.Printf("===================GetProxyServiceInstances\n%v\n", labels)
 	for _, item := range c.endpoints.informer.GetStore().List() {
 		ep := *item.(*v1.Endpoints)
 

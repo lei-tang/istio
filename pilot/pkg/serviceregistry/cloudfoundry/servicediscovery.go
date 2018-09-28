@@ -130,11 +130,13 @@ func (sd *ServiceDiscovery) InstancesByPort(hostname model.Hostname, _ int, labe
 
 		for _, backend := range backends.GetBackends() {
 			port := sd.servicePort()
-
+			endpointLabels := model.Labels{cfLabel: matchedRoute.GetCapiProcessGuid()}
 			inst := &model.ServiceInstance{
 				Endpoint: model.NetworkEndpoint{
 					Address:     backend.Address,
 					Port:        int(backend.Port),
+					Namespace:   model.IstioDefaultConfigNamespace,
+					Labels:      endpointLabels,
 					ServicePort: port,
 				},
 				Service: &model.Service{
@@ -147,9 +149,8 @@ func (sd *ServiceDiscovery) InstancesByPort(hostname model.Hostname, _ int, labe
 						Namespace: model.IstioDefaultConfigNamespace,
 					},
 				},
+				Labels: endpointLabels,
 			}
-
-			inst.Labels = model.Labels{cfLabel: matchedRoute.GetCapiProcessGuid()}
 
 			for _, label := range labels {
 				if v, ok := label[cfLabel]; ok {

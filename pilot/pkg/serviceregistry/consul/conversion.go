@@ -126,6 +126,8 @@ func convertInstance(instance *api.CatalogService) *model.ServiceInstance {
 			Address:     addr,
 			Port:        instance.ServicePort,
 			ServicePort: port,
+			Namespace:   model.IstioDefaultConfigNamespace,
+			Labels:      labels,
 		},
 		AvailabilityZone: instance.Datacenter,
 		Service: &model.Service{
