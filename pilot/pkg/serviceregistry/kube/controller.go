@@ -336,8 +336,13 @@ func (c *Controller) WorkloadHealthCheckInfo(addr string) model.ProbeList {
 // InstancesByPort implements a service catalog operation
 func (c *Controller) InstancesByPort(hostname model.Hostname, reqSvcPort int,
 	labelsList model.LabelsCollection) ([]*model.ServiceInstance, error) {
+	fmt.Println("Enter InstancesByPort()")
+	fmt.Printf("hostname is %+v\n", hostname)
 	// Get actual service by name
 	name, namespace, err := parseHostname(hostname)
+	fmt.Printf("name is %+v\n", name)
+	fmt.Printf("namespace is %+v\n", namespace)
+
 	if err != nil {
 		log.Infof("parseHostname(%s) => error %v", hostname, err)
 		return nil, err
@@ -349,23 +354,28 @@ func (c *Controller) InstancesByPort(hostname model.Hostname, reqSvcPort int,
 	}
 
 	// Locate all ports in the actual service
+	fmt.Printf("Service item is %+v\n", item)
 
 	svc := convertService(*item, c.domainSuffix)
 	if svc == nil {
 		return nil, nil
 	}
+	fmt.Printf("svc is %+v\n", svc)
 
 	svcPortEntry, exists := svc.Ports.GetByPort(reqSvcPort)
 	if !exists && reqSvcPort != 0 {
 		return nil, nil
 	}
+	fmt.Printf("svcPortEntry is %+v\n", *svcPortEntry)
 
 	for _, item := range c.endpoints.informer.GetStore().List() {
 		ep := *item.(*v1.Endpoints)
+		fmt.Printf("Endpoints item is %+v\n", item)
 		if ep.Name == name && ep.Namespace == namespace {
 			var out []*model.ServiceInstance
 			for _, ss := range ep.Subsets {
 				for _, ea := range ss.Addresses {
+					fmt.Printf("EndpointAddress is %+v\n", ea)
 					labels, _ := c.pods.labelsByIP(ea.IP)
 					// check that one of the input labels is a subset of the labels
 					if !labelsList.HasSubsetOf(labels) {
@@ -375,14 +385,18 @@ func (c *Controller) InstancesByPort(hostname model.Hostname, reqSvcPort int,
 					pod, exists := c.pods.getPodByIP(ea.IP)
 					az, sa, uid, podNamespace := "", "", "", ""
 					if exists {
+						fmt.Printf("pod for IP %+v exisits\n", ea.IP)
 						az, _ = c.GetPodAZ(pod)
 						sa = kubeToIstioServiceAccount(pod.Spec.ServiceAccountName, pod.GetNamespace(), c.domainSuffix)
 						uid = fmt.Sprintf("kubernetes://%s.%s", pod.Name, pod.Namespace)
 						podNamespace = pod.GetNamespace()
+					} else {
+						fmt.Printf("pod for IP %+v NOT exisits\n", ea.IP)
 					}
 
 					// identify the port by name. K8S EndpointPort uses the service port name
 					for _, port := range ss.Ports {
+						fmt.Printf("port is %+v\n", port)
 						if port.Name == "" || // 'name optional if single port is defined'
 							reqSvcPort == 0 || // return all ports (mostly used by tests/debug)
 							svcPortEntry.Name == port.Name {
@@ -403,6 +417,8 @@ func (c *Controller) InstancesByPort(hostname model.Hostname, reqSvcPort int,
 								AvailabilityZone: az,
 								ServiceAccount:   sa,
 							})
+							fmt.Printf("Append a ServiceInstance %+v\n", out[len(out)-1])
+							fmt.Printf("ServiceInstance Endpoint Attributes are %+v\n", out[len(out)-1].Endpoint.Attributes)
 						}
 					}
 				}

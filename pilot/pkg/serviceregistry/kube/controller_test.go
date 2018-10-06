@@ -15,7 +15,9 @@
 package kube
 
 import (
+	"flag"
 	"fmt"
+	"os"
 	"reflect"
 	"sort"
 	"testing"
@@ -106,6 +108,7 @@ func TestServices(t *testing.T) {
 		return false
 	})
 
+	fmt.Printf("call GetService() for the hostname %+v\n", hostname)
 	svc, err := sds.GetService(hostname)
 	if err != nil {
 		t.Errorf("GetService(%q) encountered unexpected error: %v", hostname, err)
@@ -116,13 +119,19 @@ func TestServices(t *testing.T) {
 	if svc.Hostname != hostname {
 		t.Errorf("GetService(%q) => %q", hostname, svc.Hostname)
 	}
+	fmt.Printf("GetService() returned service %+v\n", svc)
 
+	fmt.Printf("call InstancesByPort()\n")
 	ep, err := sds.InstancesByPort(hostname, 80, nil)
 	if err != nil {
 		t.Errorf("GetInstancesByPort() encountered unexpected error: %v", err)
 	}
 	if len(ep) != 2 {
 		t.Errorf("Invalid response for GetInstancesByPort %v", ep)
+	}
+	fmt.Printf("InstanceByPort() returned ep %+v\n", ep)
+	for _, i := range ep {
+		fmt.Printf("ServiceInstance is %+v\n", i)
 	}
 
 	missing := serviceHostname("does-not-exist", ns, domainSuffix)
@@ -514,6 +523,11 @@ func makeFakeKubeAPIController() *Controller {
 }
 
 func createEndpoints(controller *Controller, name, namespace string, portNames, ips []string, t *testing.T) {
+	fmt.Printf("Enter createEndpoints()\n")
+	fmt.Printf("name: %+v\n", name)
+	fmt.Printf("namespace: %+v\n", namespace)
+	fmt.Printf("portNames: %+v\n", portNames)
+	fmt.Printf("ips: %+v\n", ips)
 	eas := []v1.EndpointAddress{}
 	for _, ip := range ips {
 		eas = append(eas, v1.EndpointAddress{IP: ip})
@@ -638,4 +652,14 @@ func addNodes(t *testing.T, controller *Controller, nodes ...*v1.Node) {
 			t.Errorf("Cannot create node %s (error: %v)", node.Name, err)
 		}
 	}
+}
+
+func TestMain(m *testing.M) {
+	flag.Set("alsologtostderr", "true")
+	flag.Set("log_dir", "/tmp")
+	flag.Set("v", "5")
+	flag.Parse()
+
+	ret := m.Run()
+	os.Exit(ret)
 }
