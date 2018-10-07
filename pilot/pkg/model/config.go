@@ -883,6 +883,79 @@ func (store *istioConfigStore) AuthenticationPolicyByDestination(service *Servic
 	return nil
 }
 
+// AuthenticationPolicyByEndpoint finds the authentication policy that matches
+// the endpoint.
+func (store *istioConfigStore) AuthenticationPolicyByEndpoint(ne *NetworkEndpoint) *Config {
+	specs, err := store.List(AuthenticationPolicy.Type, ne.Attributes.Namespace)
+	if err != nil {
+		return nil
+	}
+	var out Config
+	currentMatchLevel := 0
+	for _, spec := range specs {
+		policy := spec.Spec.(*authn.Policy)
+		// Indicate if a policy matched to the endpoint:
+		// 0 - not match.
+		// 1 - global / cluster scope.
+		// 2 - namespace scope.
+		// 3 - service.
+		// 4 - workload.
+		matchLevel := 0
+		if len(policy.Targets) != 0 {
+			log.Debugf("When using endpoint for policy, ignore policy using targets in %s.%s", spec.Name, spec.Namespace)
+			continue
+		}
+		if policy.Selectors!= nil {
+			for _, selector := range policy.Selectors {
+				labels := Labels(selector.MatchLabels)
+				if !ne.Attributes.Labels.SubsetOf(labels) {
+					continue
+				}
+				if len(selector.Ports) > 0 {
+					for _, port := range selector.Ports {
+						if port == uint32(ne.Port) {
+							matchLevel = 4
+							break
+						}
+					}
+				} else {
+					matchLevel = 3
+				}
+				if matchLevel == 4 {
+					// matching at the most specific scope
+					break;
+				}
+			}
+		} else {
+			// Namespace-level policy.
+			matchLevel = 2
+		}
+		// Swap output policy that is match in more specific scope.
+		if matchLevel > currentMatchLevel {
+			currentMatchLevel = matchLevel
+			out = spec
+		}
+	}
+	// Non-zero currentMatchLevel implies authentication policy was found for the given host.
+	if currentMatchLevel != 0 {
+		return &out
+	}
+	// Reach here if no authentication policy found in service or namespace level; check for
+	// cluster-scoped (global) policy.
+	// Note: to avoid multiple global policy, we restrict that only the one with name equals to
+	// `DefaultAuthenticationPolicyName` ("default") will be used. Also, targets spec should be empty.
+	if specs, err := store.List(AuthenticationMeshPolicy.Type, ""); err == nil {
+		for _, spec := range specs {
+			if spec.Name == DefaultAuthenticationPolicyName {
+				return &spec
+			}
+		}
+	}
+	return nil
+}
+
+
+
 func (store *istioConfigStore) ServiceRoles(namespace string) []Config {
 	roles, err := store.List(ServiceRole.Type, namespace)
 	if err != nil {

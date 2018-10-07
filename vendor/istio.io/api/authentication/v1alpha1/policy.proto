@@ -313,6 +313,12 @@ message Policy {
   // If empty, policy will be used on all workloads in the same namespace.
   repeated TargetSelector targets = 1;
 
+  // List rules to select workloads that the policy should be applied on.
+  // Different from TargetSelector, WorkloadSelector is based on the labels
+  // and ports.
+  // If empty, policy will be used on all workloads in the same namespace.
+  repeated WorkloadSelector selectors = 10;
+
   // List of authentication methods that can be used for peer authentication.
   // They will be evaluated in order; the first validate one will be used to
   // set peer identity (source.user) and other peer attributes. If none of
@@ -388,4 +394,21 @@ message PortSelector {
     // Port name
     string name = 2;
   }
+}
+
+// WorkloadSelector specifies the labels and ports to be used for
+// selecting workloads for authentication policy.
+// The following is an example of using WorkloadSelector, which selects
+// the workload that has the label {"env": "testing} and is on the port 1234.
+// WorkloadSelector {
+//   labels: {"env", "testing"}
+//   ports: [1234]
+// }
+message WorkloadSelector {
+  // One or more label matching conditions to select subset of pods/VM on which this authentication
+  // policy should be applied. When there are multiple label requirements, all must be satisfied.
+  map<string, string> match_labels = 1;
+  // Limit the policy's scope to workloads only on these ports. Leave empty to apply to all ports
+  // (provided by the selected pods/VM)
+  repeated uint32 ports = 2;
 }
