@@ -270,6 +270,14 @@ type IstioConfigStore interface {
 	// have validation at submitting time to prevent this scenario from happening)
 	AuthenticationPolicyByDestination(service *Service, port *Port) *Config
 
+	// AuthenticationPolicyByEndpoint selects authentication policy associated
+	// with a service + port + labels.
+	// If there are more than one policies at different scopes (global, namespace, service)
+	// the one with the most specific scope will be selected. If there are more than
+	// one with the same scope, the first one seen will be used (later, we should
+	// have validation at submitting time to prevent this scenario from happening)
+	AuthenticationPolicyByEndpoint(service *Service, endpoint NetworkEndpoint, port *Port) *Config
+
 	// ServiceRoles selects ServiceRoles in the specified namespace.
 	ServiceRoles(namespace string) []Config
 
@@ -885,8 +893,13 @@ func (store *istioConfigStore) AuthenticationPolicyByDestination(service *Servic
 
 // AuthenticationPolicyByEndpoint finds the authentication policy that matches
 // the endpoint.
-func (store *istioConfigStore) AuthenticationPolicyByEndpoint(ne *NetworkEndpoint) *Config {
-	specs, err := store.List(AuthenticationPolicy.Type, ne.Attributes.Namespace)
+func (store *istioConfigStore) AuthenticationPolicyByEndpoint(service *Service,
+	endpoint NetworkEndpoint, port *Port) *Config {
+	if len(service.Attributes.Namespace) == 0 {
+		return nil
+	}
+	namespace := service.Attributes.Namespace
+	specs, err := store.List(AuthenticationPolicy.Type, namespace)
 	if err != nil {
 		return nil
 	}
@@ -894,40 +907,41 @@ func (store *istioConfigStore) AuthenticationPolicyByEndpoint(ne *NetworkEndpoin
 	currentMatchLevel := 0
 	for _, spec := range specs {
 		policy := spec.Spec.(*authn.Policy)
-		// Indicate if a policy matched to the endpoint:
+		// Indicate if a policy matched to target destination:
 		// 0 - not match.
 		// 1 - global / cluster scope.
 		// 2 - namespace scope.
-		// 3 - service.
-		// 4 - workload.
+		// 3 - workload (service).
 		matchLevel := 0
-		if len(policy.Targets) != 0 {
-			log.Debugf("When using endpoint for policy, ignore policy using targets in %s.%s", spec.Name, spec.Namespace)
-			continue
-		}
-		if policy.Selectors!= nil {
-			for _, selector := range policy.Selectors {
-				labels := Labels(selector.MatchLabels)
-				if !ne.Attributes.Labels.SubsetOf(labels) {
+		if len(policy.Targets) > 0 {
+			for _, dest := range policy.Targets {
+				if service.Hostname != ResolveShortnameToFQDN(dest.Name, spec.ConfigMeta) {
 					continue
 				}
-				if len(selector.Ports) > 0 {
-					for _, port := range selector.Ports {
-						if port == uint32(ne.Port) {
-							matchLevel = 4
+				labels := Labels(dest.MatchLabels)
+				if !labels.SubsetOf(endpoint.Attributes.Labels) {
+					continue
+				}
+				// If destination port is defined, it must match.
+				if len(dest.Ports) > 0 {
+					portMatched := false
+					for _, portSelector := range dest.Ports {
+						if port.Match(portSelector) {
+							portMatched = true
 							break
 						}
 					}
-				} else {
-					matchLevel = 3
+					if !portMatched {
+						// Port does not match with any of port selector, skip to next target selector.
+						continue
+					}
 				}
-				if matchLevel == 4 {
-					// matching at the most specific scope
-					break;
-				}
+
+				matchLevel = 3
+				break
 			}
 		} else {
-			// Namespace-level policy.
+			// Match on namespace level.
 			matchLevel = 2
 		}
 		// Swap output policy that is match in more specific scope.
@@ -940,6 +954,7 @@ func (store *istioConfigStore) AuthenticationPolicyByEndpoint(ne *NetworkEndpoin
 	if currentMatchLevel != 0 {
 		return &out
 	}
+
 	// Reach here if no authentication policy found in service or namespace level; check for
 	// cluster-scoped (global) policy.
 	// Note: to avoid multiple global policy, we restrict that only the one with name equals to
@@ -951,10 +966,9 @@ func (store *istioConfigStore) AuthenticationPolicyByEndpoint(ne *NetworkEndpoin
 			}
 		}
 	}
+
 	return nil
 }
-
-
 
 func (store *istioConfigStore) ServiceRoles(namespace string) []Config {
 	roles, err := store.List(ServiceRole.Type, namespace)
