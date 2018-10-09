@@ -276,7 +276,7 @@ type IstioConfigStore interface {
 	// the one with the most specific scope will be selected. If there are more than
 	// one with the same scope, the first one seen will be used (later, we should
 	// have validation at submitting time to prevent this scenario from happening)
-	AuthenticationPolicyByEndpoint(service *Service, endpoint NetworkEndpoint, port *Port) *Config
+	AuthenticationPolicyByEndpoint(service *Service, endpoint *NetworkEndpoint, port *Port) *Config
 
 	// ServiceRoles selects ServiceRoles in the specified namespace.
 	ServiceRoles(namespace string) []Config
@@ -894,7 +894,7 @@ func (store *istioConfigStore) AuthenticationPolicyByDestination(service *Servic
 // AuthenticationPolicyByEndpoint finds the authentication policy that matches
 // the endpoint.
 func (store *istioConfigStore) AuthenticationPolicyByEndpoint(service *Service,
-	endpoint NetworkEndpoint, port *Port) *Config {
+	endpoint *NetworkEndpoint, port *Port) *Config {
 	if len(service.Attributes.Namespace) == 0 {
 		return nil
 	}

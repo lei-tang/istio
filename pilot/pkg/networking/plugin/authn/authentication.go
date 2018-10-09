@@ -161,7 +161,7 @@ func setupFilterChains(authnPolicy *authn.Policy, serviceAccount string, sdsUdsP
 func (Plugin) OnInboundFilterChains(in *plugin.InputParams) []plugin.FilterChain {
 	port := in.ServiceInstance.Endpoint.ServicePort
 	authnPolicy := model.GetConsolidateAuthenticationPolicy(in.Env.IstioConfigStore,
-		in.ServiceInstance.Service, in.ServiceInstance.Endpoint, port)
+		in.ServiceInstance.Service, &in.ServiceInstance.Endpoint, port)
 	return setupFilterChains(authnPolicy, in.ServiceInstance.ServiceAccount, in.Env.Mesh.SdsUdsPath)
 }
 
@@ -336,7 +336,7 @@ func (Plugin) OnInboundListener(in *plugin.InputParams, mutable *plugin.MutableO
 
 func buildFilter(in *plugin.InputParams, mutable *plugin.MutableObjects) error {
 	authnPolicy := model.GetConsolidateAuthenticationPolicy(in.Env.IstioConfigStore,
-		in.ServiceInstance.Service, in.ServiceInstance.Endpoint, in.ServiceInstance.Endpoint.ServicePort)
+		in.ServiceInstance.Service, &in.ServiceInstance.Endpoint, in.ServiceInstance.Endpoint.ServicePort)
 
 	if mutable.Listener == nil || (len(mutable.Listener.FilterChains) != len(mutable.FilterChains)) {
 		return fmt.Errorf("expected same number of filter chains in listener (%d) and mutable (%d)", len(mutable.Listener.FilterChains), len(mutable.FilterChains))
