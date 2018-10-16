@@ -114,6 +114,15 @@ resources:
     version:     "v1alpha1"
     proto:       "istio.rbac.v1alpha1.RbacConfig"
 
+  - kind:        "ClusterAuthenticationConfig"
+    clusterScoped: true
+    listKind:    "ClusterAuthenticationConfigList"
+    singular:    "clusterauthenticationconfig"
+    plural:      "clusterauthenticationconfigs"
+    group:       "authentication.istio.io"
+    version:     "v1alpha2"
+    proto:       "istio.rbac.v1alpha2.ClusterAuthenticationConfig"
+
 # Types from Mixer
 
   - kind:        "rule"

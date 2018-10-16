@@ -440,6 +440,17 @@ var (
 		Validate:      ValidateAuthenticationPolicy,
 	}
 
+	// ClusterAuthenticationConfig describes an authentication policy at mesh level.
+	ClusterAuthenticationConfig = ProtoSchema{
+		ClusterScoped: true,
+		Type:          "mesh-policy",
+		Plural:        "mesh-policies",
+		Group:         "authentication",
+		Version:       "v1alpha2",
+		MessageName:   "istio.authentication.v1alpha2.ClusterAuthenticationConfig",
+		Validate:      ValidateClusterAuthenticationConfig,
+	}
+
 	// ServiceRole describes an RBAC service role.
 	ServiceRole = ProtoSchema{
 		Type:        "service-role",

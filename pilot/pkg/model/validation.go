@@ -1141,6 +1141,12 @@ func ValidateAuthenticationPolicy(name, namespace string, msg proto.Message) err
 	return errs
 }
 
+// ValidateClusterAuthenticationConfig checks that ClusterAuthenticationConfig is well-formed.
+func ValidateClusterAuthenticationConfig(name, namespace string, msg proto.Message) error {
+	// TODO (lei-tang): add the implementation
+	return nil
+}
+
 // ValidateServiceRole checks that ServiceRole is well-formed.
 func ValidateServiceRole(name, namespace string, msg proto.Message) error {
 	in, ok := msg.(*rbac.ServiceRole)
