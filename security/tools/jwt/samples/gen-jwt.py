@@ -16,8 +16,10 @@
 
 """Python script generates a JWT signed with custom private key.
 
-Example:
+Example 1:
 ./gen-jwt.py  --iss example-issuer --aud foo,bar --claims=email:foo@google.com,dead:beef key.pem -listclaim key1 val2 val3 -listclaim key2 val3 val4
+Example 2: create an APToken
+./gen-jwt.py  --iss https://cloud.google.com/iap --sub https://accounts.example.com/12345567890 --aud example-audience --claims=email:foo@google.com key.pem -listclaim key1 val2 val3 -original_claim iss https://accounts.example.com  -original_claim email user@example.com -istio_attribute source.ip 127.0.0.1 --expire=3153600000
 """
 import argparse
 import time
@@ -70,6 +72,22 @@ def main(args):
                 v = item[1:]
                 payload[k] = v
 
+    payload["original_claims"] = []
+    if args.original_claim:
+        for item in args.original_claim:
+            if (len(item)>1):
+                k = item[0]
+                v = item[1]
+                payload["original_claims"].append({k:v})
+
+    payload["istio_attributes"] = []
+    if args.istio_attribute:
+        for item in args.istio_attribute:
+            if (len(item)>1):
+                k = item[0]
+                v = item[1]
+                payload["istio_attributes"].append({k:v})
+
     token = jwt.JWT(header={"alg": "RS256", "typ": "JWT", "kid": key.key_id},
                 claims=payload)
 
@@ -102,4 +120,8 @@ if __name__ == '__main__':
                          help="JWT expiration time in second. Default is 1 hour.")
     parser.add_argument("-listclaim", "--listclaim", action='append', nargs='+',
                         help="A list claim in format key1 value2 value3... Only string values are supported. Multiple list claims can be specified, e.g., -listclaim key1 val2 val3 -listclaim key2 val3 val4.")
+    parser.add_argument("-original_claim", "--original_claim", action='append', nargs='+',
+                        help="Add an original claim in the format of key1:value1. Only string values are supported. Multiple original claims can be specified, e.g., -original_claim key1 val1 -original_claim key2 val2")
+    parser.add_argument("-istio_attribute", "--istio_attribute", action='append', nargs='+',
+                        help="Add an istio attribute in the format of key1:value1. Only string values are supported. Multiple istio attributes can be specified, e.g., -istio_attribute key1 val1 -istio_attribute key2 val2")
     print main(parser.parse_args())
