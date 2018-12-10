@@ -72,13 +72,13 @@ def main(args):
                 v = item[1:]
                 payload[k] = v
 
-    payload["original_claims"] = []
+    payload["original_payload"] = {}
     if args.original_claim:
         for item in args.original_claim:
             if (len(item)>1):
                 k = item[0]
                 v = item[1]
-                payload["original_claims"].append({k:v})
+                payload["original_payload"][k] = v
 
     payload["istio_attributes"] = []
     if args.istio_attribute:
