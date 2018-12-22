@@ -1,0 +1,60 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 2 (0x2)
+    Signature Algorithm: sha1WithRSAEncryption
+        Issuer: DC=org, DC=simple, O=Simple Inc, OU=Simple Root CA, CN=Simple Root CA
+        Validity
+            Not Before: Dec 19 18:16:43 2017 GMT
+            Not After : Dec 19 18:16:43 2027 GMT
+        Subject: DC=org, DC=simple, O=Simple Inc, OU=Simple Signing CA, CN=Simple Signing CA
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:c9:f8:91:76:e8:a7:b3:22:a2:e9:87:89:e3:a9:
+                    3b:6d:c4:dd:4c:d3:1a:fd:74:7f:48:69:cf:07:b1:
+                    5c:3b:a8:97:a5:f2:55:e5:dd:bb:e8:52:4c:84:e6:
+                    d5:f9:fb:ad:21:76:4b:44:f7:3a:c6:51:87:07:5f:
+                    e0:f1:3d:83:01:6c:e0:ef:63:57:7f:20:e2:cd:6d:
+                    49:fe:0b:de:0b:be:13:7b:3a:b7:da:72:06:fd:5e:
+                    b5:b7:ca:48:7a:0e:e9:3b:34:3d:0d:26:51:ed:ec:
+                    a0:20:53:a5:e9:73:70:1f:14:17:13:2b:2b:2e:9c:
+                    b1:00:a5:24:f5:d7:fa:bc:22:40:fa:95:8e:57:e6:
+                    d9:de:82:d8:6b:34:bc:d6:d5:cd:ec:26:7b:c4:e5:
+                    d1:f6:33:ce:9c:ef:9e:fe:3e:97:72:1e:e0:39:74:
+                    29:cb:ee:34:37:f5:04:a9:f3:95:15:b4:54:1d:39:
+                    1a:1c:a3:dc:c5:96:8d:d6:cf:82:3a:35:2d:42:7d:
+                    3d:6f:fe:0a:02:26:f3:18:67:68:3f:9b:dc:63:44:
+                    83:f0:f2:ca:a8:e2:92:d9:fe:c7:08:56:46:9e:5f:
+                    78:e9:99:b6:f9:02:6b:b3:cc:18:61:ab:27:f1:28:
+                    f3:c2:70:b2:9c:7c:0c:ac:4b:0f:32:ea:2c:c9:aa:
+                    6e:19
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Key Usage: critical
+                Certificate Sign, CRL Sign
+            X509v3 Basic Constraints: critical
+                CA:TRUE, pathlen:0
+            X509v3 Subject Key Identifier:
+                A0:A4:2A:8E:BD:CF:6C:D0:CC:64:F0:AF:05:39:4F:2C:2B:27:41:E9
+            X509v3 Authority Key Identifier:
+                keyid:26:4A:85:08:66:DB:45:D9:7C:A4:DE:8C:DC:4F:6E:BC:C3:41:A2:72
+
+    Signature Algorithm: sha1WithRSAEncryption
+         77:b7:84:e5:47:07:14:f2:29:ce:6f:97:20:71:73:e1:0a:f2:
+         b4:1a:5f:51:23:22:f4:3a:d1:4e:a1:cb:9c:16:4b:4b:d0:1f:
+         d4:be:2b:ad:5e:4e:80:23:1f:76:df:22:51:c1:e9:b3:ed:ed:
+         8f:df:aa:11:54:8d:05:f7:3c:5b:44:f9:57:a0:67:35:c1:39:
+         7a:ab:c2:74:c1:1d:5b:e4:e9:09:e1:00:b9:87:38:78:4f:e2:
+         91:3c:6f:4b:06:a9:03:3d:d3:6b:d8:6d:d6:6c:c4:ec:5d:78:
+         84:f0:1e:fc:7f:37:22:5f:10:da:66:5e:ac:74:56:29:fa:50:
+         a3:a1:b1:aa:16:4b:b0:1e:6c:bb:a8:1d:9a:ff:6e:c3:e2:ef:
+         b8:d2:5e:7e:f6:1c:09:6d:83:9c:90:bc:0d:20:95:01:75:ea:
+         95:bc:b6:fc:c2:ba:a1:d6:07:85:9c:89:e6:6d:86:26:e4:d8:
+         00:4e:fd:1b:94:43:26:69:68:e3:7a:29:0e:cd:54:aa:c7:c2:
+         70:86:4e:3f:47:6d:91:07:36:f5:35:9b:ef:9e:58:cd:48:3f:
+         f3:1f:fc:b1:d4:d6:03:85:89:43:e5:e5:02:f7:04:b2:b5:46:
+         70:91:6f:de:41:72:93:a8:d7:a3:1a:51:eb:a3:3d:c4:4c:03:
+         27:b0:64:d5
+

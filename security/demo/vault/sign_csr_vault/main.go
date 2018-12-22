@@ -20,8 +20,9 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"github.com/hashicorp/vault/api"
+	"strconv"
 
+	"github.com/hashicorp/vault/api"
 )
 
 var (
@@ -31,6 +32,7 @@ var (
 	vaultSignCsrPath = flag.String("vault-sign-csr-path", "", "The path of sign CSR on Vault.")
 	saFileName       = flag.String("service-account-file", "", "The path of the k8s service account.")
 	csrFileName      = flag.String("csr-file", "", "The path of the file storing the CSR to sign.")
+	certTTL          = flag.Int64("cert-ttl", 0, "The TTL of the certificate (in seconds).")
 )
 
 type CsrResponse struct {
@@ -59,7 +61,7 @@ func SignCSR(csrPem []byte) (*CsrResponse, error) {
 		return nil, fmt.Errorf("Failed to login Vault: %v", err)
 	}
 	client.SetToken(token)
-	cert, certChain, err := SignCsrByVault(client, *vaultSignCsrPath, csrPem[:])
+	cert, certChain, err := SignCsrByVault(client, *vaultSignCsrPath, *certTTL, csrPem[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign CSR: %v", err)
 	}
@@ -74,12 +76,23 @@ func SignCSR(csrPem []byte) (*CsrResponse, error) {
 
 //Example:
 // - GCP project: lt-istio-dev1, cluster: vault-demo1
-// - go run main.go -vault-addr=http://35.247.45.173:8200 -vault-login-role=istio-cert -vault-login-path=auth/kubernetes/login -vault-sign-csr-path=istio_ca/sign/istio-pki-role -service-account-file=./citadel-sa.jwt -csr-file=./workload-1.csr
+// - go run main.go -vault-addr=http://35.247.45.173:8200 -vault-login-role=istio-cert -vault-login-path=auth/kubernetes/login -vault-sign-csr-path=istio_ca/sign/istio-pki-role -service-account-file=./citadel-sa.jwt -csr-file=./workload-1.csr -cert-ttl=60
 // - To get the citadel sa:
 // gcloud container clusters get-credentials vault-demo1 --zone us-west1-b --project lt-istio-dev1
 //citadel_sa=$(kubectl get secret $(kubectl get serviceaccount vault-citadel-sa \
 //-o jsonpath={.secrets[0].name}) -o jsonpath={.data.token} | base64 --decode -)
 //echo -n "$citadel_sa" > citadel-sa.jwt
+
+// 1. why vault add 30-seconds to certificate TTL?
+// This is because Vault pki role for issuing the certificate has
+// the following not_before_duration:
+// - `not_before_duration` `(duration: "30s")` – Specifies the duration by which to backdate the NotBefore property.
+// Not Before: Dec 23 03:17:17 2018 GMT
+// The TTL input such as "60s" will be honored by Vault as long as it is <=maxTTL.
+// The actual TTL is correct; the value in "Not Before" is 30 seconds before the actual
+// certificate generation time.
+// 2. the certificate chain returned does not include the signed certificate.
+
 func main() {
 	flag.Parse()
 
@@ -103,7 +116,6 @@ func main() {
 		fmt.Println("No certificate is generated.")
 	}
 }
-
 
 // CreateVaultClient creates a client to a Vault server
 // vaultAddr: the address of the Vault server (e.g., "http://127.0.0.1:8200").
@@ -142,11 +154,13 @@ func LoginVaultK8sAuthMethod(client *api.Client, loginPath, role, sa string) (st
 // Return the signed certificate and the CA certificate chain when succeed.
 // client: the Vault client
 // csrSigningPath: the path for signing a CSR
+// certTTL: the certificate TTL (in seconds)
 // csr: the CSR to be signed, in pem format
-func SignCsrByVault(client *api.Client, csrSigningPath string, csr []byte) ([]byte, []byte, error) {
+func SignCsrByVault(client *api.Client, csrSigningPath string, certTTL int64, csr []byte) ([]byte, []byte, error) {
 	m := map[string]interface{}{
 		"format": "pem",
 		"csr":    string(csr[:]),
+		"ttl":    strconv.FormatInt(certTTL, 10) + "s",
 	}
 	res, err := client.Logical().Write(csrSigningPath, m)
 	if err != nil {
@@ -183,5 +197,3 @@ func SignCsrByVault(client *api.Client, csrSigningPath string, csr []byte) ([]by
 
 	return []byte(cert), []byte(certChain), nil
 }
-
-
