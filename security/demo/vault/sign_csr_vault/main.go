@@ -20,7 +20,8 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"istio.io/istio/security/pkg/util"
+	"github.com/hashicorp/vault/api"
+
 )
 
 var (
@@ -48,17 +49,17 @@ func SignCSR(csrPem []byte) (*CsrResponse, error) {
 		return nil, fmt.Errorf("Failed to read the service account token: %v", err)
 	}
 
-	client, err := util.CreateVaultClient(*vaultAddr)
+	client, err := CreateVaultClient(*vaultAddr)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create a Vault connection: %v", err)
 	}
 
-	token, err := util.LoginVaultK8sAuthMethod(client, *vaultLoginPath, *vaultLoginRole, string(saToken[:]))
+	token, err := LoginVaultK8sAuthMethod(client, *vaultLoginPath, *vaultLoginRole, string(saToken[:]))
 	if err != nil {
 		return nil, fmt.Errorf("Failed to login Vault: %v", err)
 	}
 	client.SetToken(token)
-	cert, certChain, err := util.SignCsrByVault(client, *vaultSignCsrPath, csrPem[:])
+	cert, certChain, err := SignCsrByVault(client, *vaultSignCsrPath, csrPem[:])
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign CSR: %v", err)
 	}
@@ -79,7 +80,6 @@ func SignCSR(csrPem []byte) (*CsrResponse, error) {
 //citadel_sa=$(kubectl get secret $(kubectl get serviceaccount vault-citadel-sa \
 //-o jsonpath={.secrets[0].name}) -o jsonpath={.data.token} | base64 --decode -)
 //echo -n "$citadel_sa" > citadel-sa.jwt
-
 func main() {
 	flag.Parse()
 
@@ -102,5 +102,86 @@ func main() {
 	} else {
 		fmt.Println("No certificate is generated.")
 	}
-
 }
+
+
+// CreateVaultClient creates a client to a Vault server
+// vaultAddr: the address of the Vault server (e.g., "http://127.0.0.1:8200").
+func CreateVaultClient(vaultAddr string) (*api.Client, error) {
+	config := api.DefaultConfig()
+	config.Address = vaultAddr
+
+	client, err := api.NewClient(config)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
+// LoginVaultK8sAuthMethod logs into the Vault k8s auth method with the service account and
+// returns the auth client token.
+// loginPath: the path of the login
+// role: the login role
+// jwt: the service account used for login
+func LoginVaultK8sAuthMethod(client *api.Client, loginPath, role, sa string) (string, error) {
+	resp, err := client.Logical().Write(
+		loginPath,
+		map[string]interface{}{
+			"jwt":  sa,
+			"role": role,
+		})
+
+	if err != nil {
+		return "", err
+	}
+	return resp.Auth.ClientToken, nil
+}
+
+// SignCsrByVault signs the CSR and return the signed certifcate and the CA certificate chain
+// Return the signed certificate and the CA certificate chain when succeed.
+// client: the Vault client
+// csrSigningPath: the path for signing a CSR
+// csr: the CSR to be signed, in pem format
+func SignCsrByVault(client *api.Client, csrSigningPath string, csr []byte) ([]byte, []byte, error) {
+	m := map[string]interface{}{
+		"format": "pem",
+		"csr":    string(csr[:]),
+	}
+	res, err := client.Logical().Write(csrSigningPath, m)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to post to %v: %v", csrSigningPath, err)
+	}
+	//Extract the certificate and the certificate chain
+	certificate, ok := res.Data["certificate"]
+	if !ok {
+		return nil, nil, fmt.Errorf("no certificate in the CSR response")
+	}
+	cert, ok := certificate.(string)
+	if !ok {
+		return nil, nil, fmt.Errorf("the certificate in the CSR response is not a string")
+	}
+	caChain, ok := res.Data["ca_chain"]
+	if !ok {
+		return nil, nil, fmt.Errorf("no certificate chain in the CSR response")
+	}
+	chain, ok := caChain.([]interface{})
+	if !ok {
+		return nil, nil, fmt.Errorf("the certificate chain in the CSR response is of unexpected format")
+	}
+	certChain := ""
+	for i, c := range chain {
+		_, ok := c.(string)
+		if !ok {
+			return nil, nil, fmt.Errorf("the certificate in the certificate chain is not a string")
+		}
+		certChain += c.(string)
+		if i < len(chain) {
+			certChain += "\n"
+		}
+	}
+
+	return []byte(cert), []byte(certChain), nil
+}
+
+
