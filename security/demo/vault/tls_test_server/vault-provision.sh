@@ -9,16 +9,22 @@ source ./config-environment.sh
 cd $DIR
 
 # Log in if you have not logged in yet
-gcloud auth login
+# gcloud auth login
 
 # Select the cluster used for Vault CA demo
-gcloud container clusters get-credentials $CLUSTER --zone $ZONE --project $PROJECT
+# gcloud container clusters get-credentials $CLUSTER --zone $ZONE --project $PROJECT
+
+# gcloud container clusters describe vault-tls-server --project $PROJECT --zone us-west1-b
 
 # Grant cluster admin permissions to the current user (admin permissions are required to create the necessary RBAC rules for Istio).
-# kubectl create clusterrolebinding cluster-admin-binding --clusterrole=cluster-admin --user=$(gcloud config get-value core/account)
+kubectl create clusterrolebinding cluster-admin-binding --clusterrole=cluster-admin --user=$(gcloud config get-value core/account)
 
 # After starting Vault server, export the VAULT_ADDR
-export VAULT_ADDR="https://35.233.249.249:8200"
+export VAULT_ADDR="https://35.197.93.248:8200"
+
+export VAULT_CACERT="/home/leitang/go/src/istio.io/istio/security/docker/vault-tls-cert.pem"
+
+vault login INITIAL-ROOT-TOKEN-FOR-YOUR-VAULT-SERVER
 
 # Get the k8s host address, which is used in "vault write auth/kubernetes/config kubernetes_host=..."
 k8s_host_ip=$(kubectl get endpoints|grep kubernetes|tr -s ' '| cut -d ' ' -f 2 | cut -d ':' -f 1)
@@ -60,8 +66,14 @@ echo "The SA of vault-reviewer-sa is $reviewer_sa"
 # When starting Citadel, reviewer-token.jwt file will be read by Citadel.
 echo -n "$reviewer_sa" > reviewer-token.jwt
 
-export VAULT_CACERT="/home/leitang/go/src/istio.io/istio/security/docker/vault-tls-cert.pem"
-vault login INITIAL-ROOT-TOKEN-FOR-YOUR-VAULT-SERVER
+# Get the sa of vault-reviewer-sa
+citadel_sa=$(kubectl get secret $(kubectl get serviceaccount vault-citadel-sa \
+-o jsonpath={.secrets[0].name}) -o jsonpath={.data.token} | base64 --decode -)
+echo "The SA of vault-citadel-sa is $citadel_sa"
+# Save the reviewer token for Citadel, which is used when authenticating a k8s SA at API server.
+# When starting Citadel, reviewer-token.jwt file will be read by Citadel.
+echo -n "$citadel_sa" > citadel-sa-token.jwt
+
 # Enable the Vault's k8s auth backend
 vault auth enable kubernetes
 # Configure the Vault's k8s auth backend
