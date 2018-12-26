@@ -193,6 +193,14 @@ docker.vault-test:  | $(ISTIO_DOCKER)
 	docker build -t $(HUB)/vault-test:$(TAG) -f Dockerfile.vault-test . && \
 	docker push $(HUB)/vault-test:$(TAG)
 
+# Vault TLS server docker image
+docker.vault-tls-test:  | $(ISTIO_DOCKER)
+	cp security/docker/Dockerfile.vault-tls-test security/docker/vault-tls-config.hcl $(ISTIO_DOCKER)/ && \
+	cp security/docker/vault-tls-cert.pem security/docker/vault-tls-key.pem $(ISTIO_DOCKER)/ && \
+	cd $(ISTIO_DOCKER) && \
+	docker build -t $(HUB)/vault-tls-test:$(TAG) -f Dockerfile.vault-tls-test . && \
+	docker push $(HUB)/vault-tls-test:$(TAG)
+
 docker.citadel-vault-test-1:  $(ISTIO_DOCKER)/istio_ca.crt $(ISTIO_DOCKER)/istio_ca.key citadel $(ISTIO_DOCKER)/istio_ca security/docker/Dockerfile.citadel-vault-test-1 | $(ISTIO_DOCKER)
 	cp security/docker/Dockerfile.citadel-vault-test-1 $(ISTIO_DOCKER)/ && \
 	cp security/tests/integration/vaultTest/testdata/reviewer-token.jwt $(ISTIO_DOCKER)/ && \

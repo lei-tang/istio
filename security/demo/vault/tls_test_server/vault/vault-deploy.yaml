@@ -1,0 +1,24 @@
+################################
+# Deploy Vault as a service in a cluster
+################################
+apiVersion: v1
+kind: Deployment
+apiVersion: extensions/v1beta1
+metadata:
+  name: vault-tls-server
+  namespace:  default
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: vault-tls-server
+    spec:
+      containers:
+      - name: vault
+        image: gcr.io/endpoints-jenkins/vault-tls-test:leitang
+        imagePullPolicy: "Always"
+        securityContext:
+          capabilities:
+            add:
+            - IPC_LOCK
