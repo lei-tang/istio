@@ -20,11 +20,11 @@ cd $DIR
 kubectl create clusterrolebinding cluster-admin-binding --clusterrole=cluster-admin --user=$(gcloud config get-value core/account)
 
 # After starting Vault server, export the VAULT_ADDR
-export VAULT_ADDR="https://35.197.93.248:8200"
+export VAULT_ADDR="https://35.233.249.249:8200"
 
 export VAULT_CACERT="/home/leitang/go/src/istio.io/istio/security/docker/vault-tls-cert.pem"
 
-vault login INITIAL-ROOT-TOKEN-FOR-YOUR-VAULT-SERVER
+vault login 42be52b0-e54a-d05e-8f40-8585d4e241f8
 
 # Get the k8s host address, which is used in "vault write auth/kubernetes/config kubernetes_host=..."
 k8s_host_ip=$(kubectl get endpoints|grep kubernetes|tr -s ' '| cut -d ' ' -f 2 | cut -d ':' -f 1)
