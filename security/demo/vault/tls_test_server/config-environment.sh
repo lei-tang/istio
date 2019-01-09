@@ -3,7 +3,8 @@
 # Create a new GKE cluster for running the demo and modify the following variables
 # based on your GKE project and cluster setting.
 # Your GKE project name
-export PROJECT=endpoints-authz-test1
+
+export PROJECT=endpoints-jenkins
 # Your GKE cluster zone
 export ZONE=us-west1-b
 # Your newly created GKE cluster name

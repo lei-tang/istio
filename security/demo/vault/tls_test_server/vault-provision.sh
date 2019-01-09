@@ -16,13 +16,15 @@ cd $DIR
 
 # gcloud container clusters describe vault-tls-server --project $PROJECT --zone us-west1-b
 
+# gcloud container clusters get-credentials vault-tls-server --zone us-west1-b --project endpoints-jenkins
+
 # Grant cluster admin permissions to the current user (admin permissions are required to create the necessary RBAC rules for Istio).
 kubectl create clusterrolebinding cluster-admin-binding --clusterrole=cluster-admin --user=$(gcloud config get-value core/account)
 
 # After starting Vault server, export the VAULT_ADDR
 export VAULT_ADDR="https://35.233.249.249:8200"
 
-export VAULT_CACERT="/home/leitang/go/src/istio.io/istio/security/docker/vault-tls-cert.pem"
+export VAULT_CACERT="/Users/leitang/go/src/istio.io/istio/security/demo/vault/tls_test_server/vault-tls-cert.pem"
 
 vault login 42be52b0-e54a-d05e-8f40-8585d4e241f8
 
