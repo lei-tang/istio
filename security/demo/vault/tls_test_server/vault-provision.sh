@@ -105,9 +105,13 @@ vault secrets tune -max-lease-ttl=1000h istio_ca
 # Here istio_ca.pem is a file containing the private key and the certificate of the Istio CA.
 vault write istio_ca/config/ca  pem_bundle=@../cert/istio_ca.pem
 # Configuring the CA and CRL endpoints
-vault write istio_ca/config/urls issuing_certificates="${VAULT_ADDR}/v1/istio_ca/ca" crl_distribution_points="${VAULT_ADDR}/v1/istio_ca/crl"
+# vault write istio_ca/config/urls issuing_certificates="${VAULT_ADDR}/v1/istio_ca/ca" crl_distribution_points="${VAULT_ADDR}/v1/istio_ca/crl"
+
 # Define a role in the Vault PKI backend to configure the certificate TTL, the key length, the SAN requirements, and other certificate attributes.
-vault write istio_ca/roles/istio-pki-role max_ttl=1h ttl=1h allow_any_name=true require_cn=false allowed_uri_sans="*" basic_constraints_valid_for_non_ca=true
+# vault write istio_ca/roles/istio-pki-role max_ttl=1h ttl=1h allow_any_name=true require_cn=false allowed_uri_sans="*" basic_constraints_valid_for_non_ca=true use_csr_sans=true
+# vault write istio_ca/roles/istio-pki-role max_ttl=100h ttl=100h allow_any_name=true require_cn=false allowed_uri_sans="*" use_csr_sans=true
+# vault write istio_ca/roles/istio-pki-role max_ttl=100h ttl=100h allow_any_name=true require_cn=false allowed_uri_sans="*" key_usage="DigitalSignature","KeyEncipherment"
+vault write istio_ca/roles/istio-pki-role max_ttl=100h ttl=100h allow_any_name=true require_cn=false allowed_uri_sans="*" use_csr_sans=true basic_constraints_valid_for_non_ca=true key_usage="DigitalSignature","KeyEncipherment"
 vault read istio_ca/roles/istio-pki-role
 
 
