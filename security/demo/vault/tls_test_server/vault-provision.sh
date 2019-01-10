@@ -107,7 +107,7 @@ vault write istio_ca/config/ca  pem_bundle=@../cert/istio_ca.pem
 # Configuring the CA and CRL endpoints
 vault write istio_ca/config/urls issuing_certificates="${VAULT_ADDR}/v1/istio_ca/ca" crl_distribution_points="${VAULT_ADDR}/v1/istio_ca/crl"
 # Define a role in the Vault PKI backend to configure the certificate TTL, the key length, the SAN requirements, and other certificate attributes.
-vault write istio_ca/roles/istio-pki-role max_ttl=1h ttl=1h allow_any_name=true require_cn=false allowed_uri_sans="*"
+vault write istio_ca/roles/istio-pki-role max_ttl=1h ttl=1h allow_any_name=true require_cn=false allowed_uri_sans="*" basic_constraints_valid_for_non_ca=true
 vault read istio_ca/roles/istio-pki-role
 
 
