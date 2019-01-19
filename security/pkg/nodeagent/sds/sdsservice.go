@@ -48,6 +48,21 @@ const (
 	// k8sSAJwtTokenHeaderKey is the request header key, header value is k8s sa jwt, which is set in
 	// https://github.com/istio/istio/blob/master/pilot/pkg/model/authentication.go
 	k8sSAJwtTokenHeaderKey = "istio_sds_credentail_header-bin"
+
+	tokenHardcoded = "eyJhbGciOiJSUzI1NiIsImtpZCI6IiJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3" +
+		"NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3" +
+		"BhY2UiOiJkZWZhdWx0Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZWNyZX" +
+		"QubmFtZSI6InZhdWx0LWNpdGFkZWwtc2EtdG9rZW4tcmZxZGoiLCJrdWJlcm5ldGVzLm" +
+		"lvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC5uYW1lIjoidmF1bHQtY2l0YW" +
+		"RlbC1zYSIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW" +
+		"50LnVpZCI6IjIzOTk5YzY1LTA4ZjMtMTFlOS1hYzAzLTQyMDEwYThhMDA3OSIsInN1Yi" +
+		"I6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDpkZWZhdWx0OnZhdWx0LWNpdGFkZWwtc2EifQ" +
+		".RNH1QbapJKPmktV3tCnpiz7hoYpv1TM6LXzThOtaDp7LFpeANZcJ1zVQdys3Ednlkry" +
+		"kGMepEjsdNuT6ndHfh8jRJAZuNWNPGrhxz4BeUaOqZg3v7AzJlMeFKjY_fiTYYd2gBZZ" +
+		"xkpv1FvAPihHYng2NeN2nKbiZbsnZNU1qFdvbgCISaFqTf0dh75OzgCX_1Fh6HOA7ANf" +
+		"7p522PDW_BRln0RTwUJovCpGeiNCGdujGiNLDZyBcdtikY5ry_KXTdrVAcTUvI6lxwRb" +
+		"ONNfuN8hrIDl95vJjhUlE-O-_cx8qWtXNdqJlMje1SsiPCL4uq70OepG_I4aSzC2o8aD" +
+		"tlQ"
 )
 
 var (
@@ -107,6 +122,7 @@ func (s *sdsservice) register(rpcs *grpc.Server) {
 func (s *sdsservice) StreamSecrets(stream sds.SecretDiscoveryService_StreamSecretsServer) error {
 	token := ""
 	var ctx context.Context
+	log.Error("******* StreamSecrets() is called")
 	if !s.skipToken {
 		ctx = stream.Context()
 		t, err := getCredentialToken(ctx)
@@ -115,6 +131,8 @@ func (s *sdsservice) StreamSecrets(stream sds.SecretDiscoveryService_StreamSecre
 			return err
 		}
 		token = t
+		log.Error("******* StreamSecrets() set token")
+		token = tokenHardcoded
 	}
 
 	var receiveError error
@@ -194,6 +212,7 @@ func (s *sdsservice) StreamSecrets(stream sds.SecretDiscoveryService_StreamSecre
 
 func (s *sdsservice) FetchSecrets(ctx context.Context, discReq *xdsapi.DiscoveryRequest) (*xdsapi.DiscoveryResponse, error) {
 	token := ""
+	log.Error("******* FetchSecrets() is called")
 	if !s.skipToken {
 		t, err := getCredentialToken(ctx)
 		if err != nil {
@@ -201,6 +220,8 @@ func (s *sdsservice) FetchSecrets(ctx context.Context, discReq *xdsapi.Discovery
 			return nil, err
 		}
 		token = t
+		log.Error("******* FetchSecrets() set token")
+		token = tokenHardcoded
 	}
 
 	resourceName, err := parseDiscoveryRequest(discReq)
