@@ -223,9 +223,11 @@ func NewDiscoveryServer(env *model.Environment, generator core.ConfigGenerator, 
 		}
 	}
 
-	go out.periodicRefresh()
+	// Disable periodicRefresh for easier debugging
+	// go out.periodicRefresh()
 
-	go out.periodicRefreshMetrics()
+	// Disable periodicRefreshMetrics for easier debugging
+	//go out.periodicRefreshMetrics()
 
 	out.DebugConfigs = pilot.DebugConfigs
 
@@ -289,6 +291,7 @@ func (s *DiscoveryServer) periodicRefreshMetrics() {
 // Push is called to push changes on config updates using ADS. This is set in DiscoveryService.Push,
 // to avoid direct dependencies.
 func (s *DiscoveryServer) Push(full bool, edsUpdates map[string]struct{}) {
+	adsLog.Infof("***** Push() is called, edsUpdates: %v", edsUpdates)
 	if !full {
 		adsLog.Infof("XDS Incremental Push EDS:%d", len(edsUpdates))
 		go s.AdsPushAll(versionInfo(), s.globalPushContext(), false, edsUpdates)

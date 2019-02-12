@@ -419,6 +419,13 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream ads.AggregatedDiscove
 				return err
 			}
 
+			if sdsTokenPath, found := con.modelNode.Metadata["SDS_TOKEN_PATH"]; found && len(sdsTokenPath) > 0 {
+				adsLog.Infof("ADS from a pod with SDS metadata, %v, %s, %v", peerAddr, con.ConID, discReq.String())
+			} else {
+				// when debugging, only care about the pod with SDS_TOKEN_PATH
+				continue;
+			}
+
 			switch discReq.TypeUrl {
 			case ClusterType:
 				if con.CDSWatch {

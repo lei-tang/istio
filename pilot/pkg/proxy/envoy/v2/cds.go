@@ -67,10 +67,15 @@ func (s *DiscoveryServer) pushCds(con *XdsConnection, push *model.PushContext, v
 	// The response can't be easily read due to 'any' marshaling.
 	adsLog.Infof("CDS: PUSH %s for %s %q, Clusters: %d, Services %d", version,
 		con.ConID, con.PeerAddr, len(rawClusters), len(push.Services(nil)))
+	for idx, c := range rawClusters {
+		adsLog.Infof("**** CDS: PUSH rawClusters %v: %v", idx, c)
+	}
 	return nil
 }
 
 func (s *DiscoveryServer) generateRawClusters(node *model.Proxy, push *model.PushContext) ([]*xdsapi.Cluster, error) {
+	adsLog.Infof("***** CDS: call generateRawClusters() with node metadata %v", node.Metadata)
+
 	rawClusters, err := s.ConfigGenerator.BuildClusters(s.Env, node, push)
 	if err != nil {
 		adsLog.Warnf("CDS: Failed to generate clusters for node %s: %v", node.ID, err)
