@@ -16,6 +16,7 @@ package v2
 
 import (
 	"fmt"
+	"github.com/golang/protobuf/proto"
 
 	xdsapi "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	"github.com/gogo/protobuf/types"
@@ -47,6 +48,8 @@ func (con *XdsConnection) clusters(response []*xdsapi.Cluster) *xdsapi.Discovery
 }
 
 func (s *DiscoveryServer) pushCds(con *XdsConnection, push *model.PushContext, version string) error {
+	adsLog.Infof("***** Enter pushCds()")
+
 	// TODO: Modify interface to take services, and config instead of making library query registry
 	rawClusters, err := s.generateRawClusters(con.modelNode, push)
 	if err != nil {
@@ -55,8 +58,11 @@ func (s *DiscoveryServer) pushCds(con *XdsConnection, push *model.PushContext, v
 	if s.DebugConfigs {
 		con.CDSClusters = rawClusters
 	}
+
 	response := con.clusters(rawClusters)
+
 	err = con.send(response)
+
 	if err != nil {
 		adsLog.Warnf("CDS: Send failure %s: %v", con.ConID, err)
 		pushes.With(prometheus.Labels{"type": "cds_senderr"}).Add(1)
@@ -64,17 +70,12 @@ func (s *DiscoveryServer) pushCds(con *XdsConnection, push *model.PushContext, v
 	}
 	pushes.With(prometheus.Labels{"type": "cds"}).Add(1)
 
-	// The response can't be easily read due to 'any' marshaling.
-	adsLog.Infof("CDS: PUSH %s for %s %q, Clusters: %d, Services %d", version,
-		con.ConID, con.PeerAddr, len(rawClusters), len(push.Services(nil)))
-	for idx, c := range rawClusters {
-		adsLog.Infof("**** CDS: PUSH rawClusters %v: %v", idx, c)
-	}
+	adsLog.Infof("***** Exit pushCds()")
 	return nil
 }
 
 func (s *DiscoveryServer) generateRawClusters(node *model.Proxy, push *model.PushContext) ([]*xdsapi.Cluster, error) {
-	adsLog.Infof("***** CDS: call generateRawClusters() with node metadata %v", node.Metadata)
+	adsLog.Infof("***** Enter generateRawClusters() with node metadata %v", node.Metadata)
 
 	rawClusters, err := s.ConfigGenerator.BuildClusters(s.Env, node, push)
 	if err != nil {
@@ -84,6 +85,28 @@ func (s *DiscoveryServer) generateRawClusters(node *model.Proxy, push *model.Pus
 	}
 
 	for _, c := range rawClusters {
+		//TODO (lei-tang):
+		// 1. move this to a function
+		// 2. change the token path "/var/run/secrets/kubernetes.io/serviceaccount/token"
+		// in combined_validation_context.validation_context_sds_secret_config to SDS_TOKEN_PATH
+		if sdsTokenPath, found := node.Metadata[model.NodeMetadataSdsTokenPath]; found && len(sdsTokenPath) > 0 {
+			if c.GetTlsContext() != nil && c.GetTlsContext().GetCommonTlsContext()!= nil &&
+				c.GetTlsContext().GetCommonTlsContext().GetTlsCertificateSdsSecretConfigs() != nil {
+				adsLog.Infof("***** generateRawClusters(), revise SDS_TOKEN_PATH")
+				for _, sc := range c.GetTlsContext().GetCommonTlsContext().GetTlsCertificateSdsSecretConfigs() {
+					if sc.GetSdsConfig() != nil && sc.GetSdsConfig().GetApiConfigSource() != nil &&
+						sc.GetSdsConfig().GetApiConfigSource().GetGrpcServices() != nil {
+						for _, svc := range sc.GetSdsConfig().GetApiConfigSource().GetGrpcServices() {
+							if svc.GetGoogleGrpc() != nil && svc.GetGoogleGrpc().GetCallCredentials() != nil &&
+								svc.GetGoogleGrpc().GetCredentialsFactoryName() == model.FileBasedMetadataPlugName {
+									svc.GetGoogleGrpc().CallCredentials = model.ConstructgRPCCallCredentials(sdsTokenPath, model.K8sSAJwtTokenHeaderKey)
+							}
+						}
+					}
+				}
+			}
+		}
+
 		if err = c.Validate(); err != nil {
 			retErr := fmt.Errorf("CDS: Generated invalid cluster for node %v: %v", node, err)
 			adsLog.Errorf("CDS: Generated invalid cluster for node %s: %v, %v", node.ID, err, c)
@@ -95,5 +118,11 @@ func (s *DiscoveryServer) generateRawClusters(node *model.Proxy, push *model.Pus
 			panic(retErr.Error())
 		}
 	}
+
+	for idx, c := range rawClusters {
+		adsLog.Infof("***** rawClusters %v: %v", idx, proto.MarshalTextString(c))
+	}
+
+	adsLog.Infof("***** Exit generateRawClusters() with node metadata %v", node.Metadata)
 	return rawClusters, nil
 }

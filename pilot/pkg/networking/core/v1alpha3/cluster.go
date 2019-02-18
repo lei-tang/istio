@@ -92,17 +92,21 @@ func (configgen *ConfigGeneratorImpl) BuildClusters(env *model.Environment, prox
 		sidecarScope := proxy.SidecarScope
 		recomputeOutboundClusters := true
 		if configgen.CanUsePrecomputedCDS(proxy) {
+			log.Infof("***** BuildClusters(), configgen.CanUsePrecomputedCDS(proxy) is true")
 			if sidecarScope != nil && sidecarScope.CDSOutboundClusters != nil {
+				log.Infof("***** BuildClusters(), sidecarScope != nil")
 				// NOTE: We currently only cache & update the CDS output for NoProxyLocality
 				clusters = append(clusters, sidecarScope.CDSOutboundClusters[util.NoProxyLocality]...)
 				recomputeOutboundClusters = false
 				if locality != nil {
+					log.Infof("***** BuildClusters(), locality != nil")
 					applyLocalityLBSetting(locality, clusters, env.Mesh.LocalityLbSetting, true)
 				}
 			}
 		}
 
 		if recomputeOutboundClusters {
+			log.Infof("***** BuildClusters(), recomputeOutboundClusters is true")
 			clusters = append(clusters, configgen.buildOutboundClusters(env, proxy, push)...)
 			if locality != nil {
 				applyLocalityLBSetting(locality, clusters, env.Mesh.LocalityLbSetting, false)
@@ -115,15 +119,18 @@ func (configgen *ConfigGeneratorImpl) BuildClusters(env *model.Environment, prox
 		for _, ip := range proxy.IPAddresses {
 			managementPorts = append(managementPorts, env.ManagementPorts(ip)...)
 		}
+		log.Infof("***** BuildClusters(), managementPorts: %v", managementPorts)
 		clusters = append(clusters, configgen.buildInboundClusters(env, proxy, push, instances, managementPorts)...)
 
 	default: // Gateways
+		log.Infof("***** BuildClusters(), switch to default case")
 		recomputeOutboundClusters := true
 		if configgen.CanUsePrecomputedCDS(proxy) {
 			if configgen.PrecomputedOutboundClustersForGateways != nil {
 				if configgen.PrecomputedOutboundClustersForGateways[proxy.ConfigNamespace] != nil {
 					clusters = append(clusters, configgen.PrecomputedOutboundClustersForGateways[proxy.ConfigNamespace][util.NoProxyLocality]...)
 					recomputeOutboundClusters = false
+					log.Infof("***** BuildClusters(), recomputeOutboundClusters set as false")
 					if locality != nil {
 						applyLocalityLBSetting(locality, clusters, env.Mesh.LocalityLbSetting, true)
 					}
@@ -147,6 +154,7 @@ func (configgen *ConfigGeneratorImpl) BuildClusters(env *model.Environment, prox
 	clusters = append(clusters, buildBlackHoleCluster())
 	clusters = append(clusters, buildDefaultPassthroughCluster())
 
+	log.Infof("***** Exit BuildClusters(), metadata is %v", proxy.Metadata)
 	return normalizeClusters(push, proxy, clusters), nil
 }
 
@@ -248,6 +256,8 @@ func (configgen *ConfigGeneratorImpl) buildOutboundClusters(env *model.Environme
 
 // SniDnat clusters do not have any TLS setting, as they simply forward traffic to upstream
 func (configgen *ConfigGeneratorImpl) buildOutboundSniDnatClusters(env *model.Environment, proxy *model.Proxy, push *model.PushContext) []*apiv2.Cluster {
+	log.Infof("***** Enter buildOutboundSniDnatClusters()")
+
 	clusters := make([]*apiv2.Cluster, 0)
 
 	networkView := model.GetNetworkView(proxy)
@@ -295,6 +305,11 @@ func (configgen *ConfigGeneratorImpl) buildOutboundSniDnatClusters(env *model.En
 		}
 	}
 
+	log.Infof("***** clusters are:")
+	for idx, c := range clusters {
+		log.Infof("Cluster %v: %v", idx, proto.MarshalTextString(c))
+	}
+	log.Infof("***** Exit buildOutboundSniDnatClusters()")
 	return clusters
 }
 
@@ -383,7 +398,7 @@ func buildInboundLocalityLbEndpoints(bind string, port int) []endpoint.LocalityL
 func (configgen *ConfigGeneratorImpl) buildInboundClusters(env *model.Environment, proxy *model.Proxy,
 	push *model.PushContext, instances []*model.ServiceInstance, managementPorts []*model.Port) []*apiv2.Cluster {
 
-	log.Infof("***** Enter buildInboundClusters(), metadata: %v", proxy.Metadata) 
+	log.Infof("***** Enter buildInboundClusters(), metadata: %v", proxy.Metadata)
 
 	clusters := make([]*apiv2.Cluster, 0)
 
@@ -396,6 +411,7 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(env *model.Environmen
 	noneMode := proxy.GetInterceptionMode() == model.InterceptionNone
 
 	if sidecarScope == nil || !sidecarScope.HasCustomIngressListeners {
+		log.Infof("***** No user supplied sidecar scope or the user supplied one has no ingress listeners")
 		// No user supplied sidecar scope or the user supplied one has no ingress listeners
 
 		// We should not create inbound listeners in NONE mode based on the service instances
@@ -429,11 +445,14 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(env *model.Environmen
 			clusters = append(clusters, mgmtCluster)
 		}
 	} else {
+		log.Infof("***** There is user supplied sidecar scope or the user supplied one has no ingress listeners")
 		if instances == nil || len(instances) == 0 {
 			return clusters
 		}
 		rule := sidecarScope.Config.Spec.(*networking.Sidecar)
-		for _, ingressListener := range rule.Ingress {
+		for idx, ingressListener := range rule.Ingress {
+			log.Infof("***** ingressListener %v: %v", idx, proto.MarshalTextString(ingressListener))
+
 			// LDS would have setup the inbound clusters
 			// as inbound|portNumber|portName|Hostname
 			listenPort := &model.Port{
@@ -469,6 +488,8 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(env *model.Environmen
 				continue
 			}
 
+			log.Infof("***** service instance for ingress listener: %v", instance)
+
 			// Update the values here so that the plugins use the right ports
 			// uds values
 			// TODO: all plugins need to be updated to account for the fact that
@@ -489,7 +510,11 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusters(env *model.Environmen
 			clusters = append(clusters, localCluster)
 		}
 	}
-
+    log.Infof("***** clusters are:")
+    for idx, c := range clusters {
+            log.Infof("Cluster %v: %v", idx, proto.MarshalTextString(c))
+    }
+	log.Infof("***** Exit buildInboundClusters(), metadata: %v", proxy.Metadata)
 	return clusters
 }
 
@@ -529,18 +554,23 @@ func (configgen *ConfigGeneratorImpl) findServiceInstanceForIngressListener(inst
 }
 
 func (configgen *ConfigGeneratorImpl) buildInboundClusterForPortOrUDS(pluginParams *plugin.InputParams) *apiv2.Cluster {
-    log.Infof("Enter buildInboundClusterForPortOrUDS(), %v, metadata: %v", pluginParams, pluginParams.Node.Metadata)
+    log.Infof("***** Enter buildInboundClusterForPortOrUDS(), %v, metadata: %v", pluginParams, pluginParams.Node.Metadata)
 
 	instance := pluginParams.ServiceInstance
 	clusterName := model.BuildSubsetKey(model.TrafficDirectionInbound, instance.Endpoint.ServicePort.Name,
 		instance.Service.Hostname, instance.Endpoint.ServicePort.Port)
+
 	localityLbEndpoints := buildInboundLocalityLbEndpoints(pluginParams.Bind, instance.Endpoint.Port)
+
 	localCluster := buildDefaultCluster(pluginParams.Env, clusterName, apiv2.Cluster_STATIC, localityLbEndpoints,
 		model.TrafficDirectionInbound, pluginParams.Node.Metadata)
+
 	setUpstreamProtocol(localCluster, instance.Endpoint.ServicePort)
+
 	// call plugins
 	for _, p := range configgen.Plugins {
-       	log.Infof("OnInboundCluster() %v, %v", pluginParams, localCluster)
+       	log.Infof("OnInboundCluster() proxy: %v, localCluster: %v",
+       		pluginParams.Node, proto.MarshalTextString(localCluster))
 		p.OnInboundCluster(pluginParams, localCluster)
 	}
 
@@ -560,6 +590,9 @@ func (configgen *ConfigGeneratorImpl) buildInboundClusterForPortOrUDS(pluginPara
 			localCluster.Metadata = util.BuildConfigInfoMetadata(config.ConfigMeta)
 		}
 	}
+
+	log.Infof("***** Exit buildInboundClusterForPortOrUDS(), cluster built: %v", pluginParams,
+		proto.MarshalTextString(localCluster))
 	return localCluster
 }
 
@@ -966,6 +999,7 @@ func applyUpstreamTLSSettings(env *model.Environment, cluster *apiv2.Cluster, tl
 						env.Mesh.EnableSdsTokenMount, env.Mesh.SdsUseK8SSaJwt, metadata),
 				},
 			}
+			log.Infof("***** applyUpstreamTLSSettings(), cluster: %v", proto.MarshalTextString(cluster))
 		}
 
 		// Set default SNI of cluster name for istio_mutual if sni is not set.
