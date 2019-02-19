@@ -420,8 +420,9 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream ads.AggregatedDiscove
 			}
 
 			if sdsTokenPath, found := con.modelNode.Metadata["SDS_TOKEN_PATH"]; found && len(sdsTokenPath) > 0 {
-				adsLog.Infof("ADS from a pod with SDS metadata, %v, %s, %v", peerAddr, con.ConID, discReq.String())
+				adsLog.Infof("***** ADS from a pod with SDS metadata, %v, %s, %v", peerAddr, con.ConID, discReq.String())
 			} else {
+				adsLog.Infof("***** Discard request from node without SDS metadata, %v, %s, %v", peerAddr, con.ConID, discReq.String())
 				// when debugging, only care about the pod with SDS_TOKEN_PATH
 				continue;
 			}

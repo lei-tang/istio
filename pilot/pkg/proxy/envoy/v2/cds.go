@@ -86,21 +86,57 @@ func (s *DiscoveryServer) generateRawClusters(node *model.Proxy, push *model.Pus
 
 	for _, c := range rawClusters {
 		//TODO (lei-tang):
-		// 1. move this to a function
-		// 2. change the token path "/var/run/secrets/kubernetes.io/serviceaccount/token"
-		// in combined_validation_context.validation_context_sds_secret_config to SDS_TOKEN_PATH
+		// 1. move this to a function and add unit test
+		// 2. test with httpbin and sleep for mTLS
+		// - When sleep curl httpbin, an error occurs:
+		// - solve the problem of sleep: SSL error: 268435581:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED
+		// - solve the problem of httpbin: SSL error: 268436502:SSL routines:OPENSSL_internal:SSLV3_ALERT_CERTIFICATE_UNKNOWN
+		// - The problem is resolved by let httpbin and sleep to run using a service account called "vault-citadel-sa".
+		// The service account is configured in the deployment.
+		// Why the service account is configured in the deployment?
+		// Is the problem caused by secure naming (service name validation)?
+		// - client asks Pilot what the server's service account is. Pilot put verify_subject_alt_name of the server (httpbin)
+		// in the CDS of client (sleep).
+		//combined_validation_context {
+		//	default_validation_context {
+		//		verify_subject_alt_name: "spiffe://cluster.local/ns/default/sa/vault-citadel-sa"
+		//	}
+		//}
+		// - when server presents its certificate to client, client validates that the SAN in the server's certificate
+		// matches the server's service account.
+		// - bool ContextImpl::verifySubjectAltName(X509* cert, const std::vector<std::string>& subject_alt_names)
+		// verifies the SAN in the certificate.
 		if sdsTokenPath, found := node.Metadata[model.NodeMetadataSdsTokenPath]; found && len(sdsTokenPath) > 0 {
 			if c.GetTlsContext() != nil && c.GetTlsContext().GetCommonTlsContext()!= nil &&
 				c.GetTlsContext().GetCommonTlsContext().GetTlsCertificateSdsSecretConfigs() != nil {
-				adsLog.Infof("***** generateRawClusters(), revise SDS_TOKEN_PATH")
+				adsLog.Infof("***** generateRawClusters(), revise SDS_TOKEN_PATH in SDS secret config")
 				for _, sc := range c.GetTlsContext().GetCommonTlsContext().GetTlsCertificateSdsSecretConfigs() {
 					if sc.GetSdsConfig() != nil && sc.GetSdsConfig().GetApiConfigSource() != nil &&
 						sc.GetSdsConfig().GetApiConfigSource().GetGrpcServices() != nil {
 						for _, svc := range sc.GetSdsConfig().GetApiConfigSource().GetGrpcServices() {
 							if svc.GetGoogleGrpc() != nil && svc.GetGoogleGrpc().GetCallCredentials() != nil &&
 								svc.GetGoogleGrpc().GetCredentialsFactoryName() == model.FileBasedMetadataPlugName {
-									svc.GetGoogleGrpc().CallCredentials = model.ConstructgRPCCallCredentials(sdsTokenPath, model.K8sSAJwtTokenHeaderKey)
+									svc.GetGoogleGrpc().CallCredentials =
+										model.ConstructgRPCCallCredentials(sdsTokenPath, model.K8sSAJwtTokenHeaderKey)
 							}
+						}
+					}
+				}
+			}
+
+			// update the SDS path in validation context
+			if c.GetTlsContext() != nil && c.GetTlsContext().GetCommonTlsContext()!= nil &&
+				c.GetTlsContext().GetCommonTlsContext().GetCombinedValidationContext() != nil &&
+				c.GetTlsContext().GetCommonTlsContext().GetCombinedValidationContext().GetValidationContextSdsSecretConfig() != nil {
+				sc := c.GetTlsContext().GetCommonTlsContext().GetCombinedValidationContext().GetValidationContextSdsSecretConfig()
+				adsLog.Infof("***** generateRawClusters(), revise SDS_TOKEN_PATH in SDS validation context")
+				if sc.GetSdsConfig() != nil && sc.GetSdsConfig().GetApiConfigSource() != nil &&
+					sc.GetSdsConfig().GetApiConfigSource().GetGrpcServices() != nil {
+					for _, svc := range sc.GetSdsConfig().GetApiConfigSource().GetGrpcServices() {
+						if svc.GetGoogleGrpc() != nil && svc.GetGoogleGrpc().GetCallCredentials() != nil &&
+							svc.GetGoogleGrpc().GetCredentialsFactoryName() == model.FileBasedMetadataPlugName {
+							svc.GetGoogleGrpc().CallCredentials =
+								model.ConstructgRPCCallCredentials(sdsTokenPath, model.K8sSAJwtTokenHeaderKey)
 						}
 					}
 				}

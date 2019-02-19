@@ -95,8 +95,14 @@ func (configgen *ConfigGeneratorImpl) BuildClusters(env *model.Environment, prox
 			log.Infof("***** BuildClusters(), configgen.CanUsePrecomputedCDS(proxy) is true")
 			if sidecarScope != nil && sidecarScope.CDSOutboundClusters != nil {
 				log.Infof("***** BuildClusters(), sidecarScope != nil")
+
 				// NOTE: We currently only cache & update the CDS output for NoProxyLocality
 				clusters = append(clusters, sidecarScope.CDSOutboundClusters[util.NoProxyLocality]...)
+				log.Infof("***** Add to clusters sidecarScope.CDSOutboundClusters[util.NoProxyLocality]")
+				for idx, c := range clusters {
+					log.Infof("Cluster %v: %v", idx, proto.MarshalTextString(c))
+				}
+
 				recomputeOutboundClusters = false
 				if locality != nil {
 					log.Infof("***** BuildClusters(), locality != nil")
@@ -120,6 +126,7 @@ func (configgen *ConfigGeneratorImpl) BuildClusters(env *model.Environment, prox
 			managementPorts = append(managementPorts, env.ManagementPorts(ip)...)
 		}
 		log.Infof("***** BuildClusters(), managementPorts: %v", managementPorts)
+
 		clusters = append(clusters, configgen.buildInboundClusters(env, proxy, push, instances, managementPorts)...)
 
 	default: // Gateways
