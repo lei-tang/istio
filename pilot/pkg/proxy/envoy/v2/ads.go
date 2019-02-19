@@ -424,7 +424,7 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream ads.AggregatedDiscove
 			} else {
 				adsLog.Infof("***** Discard request from node without SDS metadata, %v, %s, %v", peerAddr, con.ConID, discReq.String())
 				// when debugging, only care about the pod with SDS_TOKEN_PATH
-				continue;
+				continue
 			}
 
 			switch discReq.TypeUrl {
