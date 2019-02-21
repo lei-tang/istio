@@ -16,7 +16,6 @@ package v2
 
 import (
 	"fmt"
-
 	"github.com/golang/protobuf/proto"
 
 	xdsapi "github.com/envoyproxy/go-control-plane/envoy/api/v2"
@@ -83,6 +82,28 @@ func (s *DiscoveryServer) generateRawClusters(node *model.Proxy, push *model.Pus
 		adsLog.Warnf("CDS: Failed to generate clusters for node %s: %v", node.ID, err)
 		pushes.With(prometheus.Labels{"type": "cds_builderr"}).Add(1)
 		return nil, err
+	}
+
+	if sdsTokenPath, found := node.Metadata[model.NodeMetadataSdsTokenPath]; found && len(sdsTokenPath) > 0 {
+		// If SDS_TOKEN_PATh is in the node metadata, make a copy of rawClusters so that
+		// the path of SDS token will be applied to the copied clusters.
+		adsLog.Infof("***** Make a copy of the raw clusters before setting SDS_TOKEN_PATH.")
+		clusters := make([]*xdsapi.Cluster, 0)
+		for _, c := range rawClusters {
+			bytes, err := c.Marshal()
+			if err != nil {
+				adsLog.Warnf("Error when marshal cluster: %v, error: %v", c, err)
+				continue
+			}
+			cp := &xdsapi.Cluster{}
+			err = cp.Unmarshal(bytes)
+			if err != nil {
+				adsLog.Warnf("Error when unmarshal cluster, error: %v", err)
+				continue
+			}
+			clusters = append(clusters, cp)
+		}
+		rawClusters = clusters
 	}
 
 	for _, c := range rawClusters {
