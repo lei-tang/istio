@@ -16,9 +16,9 @@ package helm
 
 import (
 	"fmt"
-
 	"istio.io/istio/pkg/test/scopes"
 	"istio.io/istio/pkg/test/shell"
+	"unicode"
 )
 
 // Init calls "helm init"
@@ -43,6 +43,13 @@ func Template(homeDir, template, name, namespace string, valuesFile string, valu
 	valuesString := ""
 	for k, v := range values {
 		valuesString += fmt.Sprintf(" --set %s=%s", k, v)
+		//if containSpaces(v) {
+		//	// Quote the string value so that a string "part1 part2" is not
+		//	// interpreted as " --set key=part1 part2".
+		//	valuesString += fmt.Sprintf(" --set %s=\"%s\"", k, v)
+		//} else {
+		//	valuesString += fmt.Sprintf(" --set %s=%s", k, v)
+		//}
 	}
 
 	valuesFileString := ""
@@ -57,4 +64,17 @@ func Template(homeDir, template, name, namespace string, valuesFile string, valu
 	}
 
 	return out, err
+}
+
+func containSpaces(str string) bool {
+	if len(str) == 0 {
+		return false
+	}
+	for _, c := range str {
+		// Check each character to see if it is a whitespace.
+		if unicode.IsSpace(c) {
+			return true
+		}
+	}
+	return false
 }
