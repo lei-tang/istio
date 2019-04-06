@@ -36,10 +36,20 @@ func Execute(format string, args ...interface{}) (string, error) {
 			p = append(p, parts[i])
 		}
 	}
-	return executeArgs(nil, parts[0], p[1:]...)
+	return ExecuteArgs(nil, parts[0], p[1:]...)
 }
 
-func executeArgs(env []string, name string, args ...string) (string, error) {
+// Execute the given command with the arguments assembled.
+// Unlike Execute(), this function does not split the command string by
+// the space character, thereby not having the problem of escaping a command string.
+// E.g., --set "part1 part2" will not be treated as --set part1 part2; instead,
+// "part1 part2" is treated as one argument.
+func ExecuteCmdWithAssembledArg(cmdName, args string) (string, error) {
+	// Why not just export ExecuteArgs() to helm.go?
+	return ExecuteArgs(nil, cmdName, args)
+}
+
+func ExecuteArgs(env []string, name string, args ...string) (string, error) {
 
 	if scope.DebugEnabled() {
 		cmd := strings.Join(args, " ")
