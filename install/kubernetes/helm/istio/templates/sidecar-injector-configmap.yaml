@@ -293,7 +293,7 @@ data:
         hostPath:
           path: /var/run/sds/uds_path
           type: Socket
-      {{- if .Values.global.sds.customToken }}
+      {{- if .Values.global.sds.customTokenDirectory }}
       - name: custom-sds-token
         secret:
           secretName: sdstokensecret
