@@ -196,6 +196,10 @@ data:
         - name: ISTIO_BOOTSTRAP_OVERRIDE
           value: "/etc/istio/custom-bootstrap/custom_bootstrap.json"
         {{ "[[- end ]]" }}
+        {{- if .Values.global.sds.customTokenDirectory }}
+        - name: ISTIO_META_SDS_TOKEN_PATH
+          value: "{{ .Values.global.sds.customTokenDirectory -}}/sdstoken"
+        {{- end }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
         {{ "[[ if (ne (annotation .ObjectMeta `status.sidecar.istio.io/port` " }} {{ .Values.global.proxy.statusPort }} {{ ") \"0\") ]]" }}
         readinessProbe:
@@ -258,6 +262,11 @@ data:
         - mountPath: /var/run/secrets/tokens
           name: istio-token
         {{- end }}
+        {{- if .Values.global.sds.customTokenDirectory }}
+        - mountPath: "{{ .Values.global.sds.customTokenDirectory -}}"
+          name: custom-sds-token
+          readOnly: true
+        {{- end }}
         {{- end }}
         {{- if and (eq .Values.global.proxy.tracer "lightstep") .Values.global.tracer.lightstep.cacertPath }}
         - mountPath: {{ "[[ directory .ProxyConfig.GetTracing.GetLightstep.GetCacertPath ]]" }}
@@ -284,6 +293,11 @@ data:
         hostPath:
           path: /var/run/sds/uds_path
           type: Socket
+      {{- if .Values.global.sds.customToken }}
+      - name: custom-sds-token
+        secret:
+          secretName: sdstokensecret
+      {{- end }}
       {{- if .Values.global.sds.useTrustworthyJwt }}
       - name: istio-token
         projected:

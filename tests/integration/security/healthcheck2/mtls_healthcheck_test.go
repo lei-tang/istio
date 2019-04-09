@@ -51,6 +51,8 @@ func setupConfig(cfg *istio.Config) {
 	cfg.Values["global.sds.enabled"] = "true"
 	cfg.Values["global.sds.udsPath"] = "unix:/var/run/sds/uds_path"
 	cfg.Values["global.sds.useNormalJwt"] = "true"
+	cfg.Values["global.sds.customTokenDirectory"] = "/etc/sdstoken"
+	cfg.Values["global.sds.customToken"] = "eyJhbGciOiJSUzI1NiIsImtpZCI6IiJ9.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJkZWZhdWx0Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZWNyZXQubmFtZSI6InZhdWx0LWNpdGFkZWwtc2EtdG9rZW4tcmZxZGoiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC5uYW1lIjoidmF1bHQtY2l0YWRlbC1zYSIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50LnVpZCI6IjIzOTk5YzY1LTA4ZjMtMTFlOS1hYzAzLTQyMDEwYThhMDA3OSIsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDpkZWZhdWx0OnZhdWx0LWNpdGFkZWwtc2EifQ.RNH1QbapJKPmktV3tCnpiz7hoYpv1TM6LXzThOtaDp7LFpeANZcJ1zVQdys3EdnlkrykGMepEjsdNuT6ndHfh8jRJAZuNWNPGrhxz4BeUaOqZg3v7AzJlMeFKjY_fiTYYd2gBZZxkpv1FvAPihHYng2NeN2nKbiZbsnZNU1qFdvbgCISaFqTf0dh75OzgCX_1Fh6HOA7ANf7p522PDW_BRln0RTwUJovCpGeiNCGdujGiNLDZyBcdtikY5ry_KXTdrVAcTUvI6lxwRbONNfuN8hrIDl95vJjhUlE-O-_cx8qWtXNdqJlMje1SsiPCL4uq70OepG_I4aSzC2o8aDtlQ"
 
 	cfg.Values["nodeagent.enabled"] = "true"
 	cfg.Values["nodeagent.image"] = "node-agent-k8s"
