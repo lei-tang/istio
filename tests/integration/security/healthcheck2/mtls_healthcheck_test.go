@@ -20,9 +20,7 @@ import (
 	"testing"
 
 	"istio.io/istio/pkg/test/framework/components/apps"
-	"istio.io/istio/pkg/test/framework/components/deployment"
 	"istio.io/istio/pkg/test/framework/components/environment"
-	"istio.io/istio/pkg/test/framework/components/namespace"
 	"istio.io/istio/pkg/test/framework/components/pilot"
 
 	"istio.io/istio/pkg/test/framework"
@@ -45,6 +43,7 @@ func setupConfig(cfg *istio.Config) {
 		return
 	}
 	cfg.Values["sidecarInjectorWebhook.rewriteAppHTTPProbe"] = "true"
+
 	// New values for Vault CA test
 	cfg.Values["global.controlPlaneSecurityEnabled"] = "false"
 	cfg.Values["global.mtls.enabled"] = "true"
@@ -79,28 +78,30 @@ func TestMtlsHealthCheck(t *testing.T) {
 	defer ctx.Done(t)
 	ctx.RequireOrSkip(t, environment.Kube)
 
-	ns := namespace.ClaimOrFail(t, ctx, "default")
-	_, err := deployment.New(ctx, deployment.Config{
-		Yaml: `apiVersion: "authentication.istio.io/v1alpha1"
-kind: "Policy"
-metadata:
-  name: "mtls-strict-for-healthcheck"
-spec:
-  targets:
-  - name: "healthcheck"
-  peers:
-    - mtls:
-        mode: STRICT
-`,
-		Namespace: ns,
-	})
-	if err != nil {
-		t.Error(err)
-	}
+//	ns := namespace.ClaimOrFail(t, ctx, "default")
+//	_, err := deployment.New(ctx, deployment.Config{
+//		Yaml: `apiVersion: "authentication.istio.io/v1alpha1"
+//kind: "Policy"
+//metadata:
+//  name: "mtls-strict-for-healthcheck"
+//spec:
+//  targets:
+//  - name: "healthcheck"
+//  peers:
+//    - mtls:
+//        mode: STRICT
+//`,
+//		Namespace: ns,
+//	})
+//	if err != nil {
+//		t.Error(err)
+//	}
+
 	pilot := pilot.NewOrFail(t, ctx, pilot.Config{})
-	aps := apps.NewOrFail(ctx, t, apps.Config{Pilot: pilot, AppParams: []apps.AppParam{
-		{Name: "healthcheck"},
+	ap1 := apps.NewOrFail(ctx, t, apps.Config{Pilot: pilot, AppParams: []apps.AppParam{
+		{Name: "healthcheck1"},
 	}})
-	aps.GetAppOrFail("healthcheck", t)
+	ap1.GetAppOrFail("healthcheck1", t)
+
 	// TODO(incfly): add a negative test once we have a per deployment annotation support for this feature.
 }
