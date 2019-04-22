@@ -54,8 +54,10 @@ func setAccessLogAndBuildTCPFilter(env *model.Environment, node *model.Proxy, co
 		acc := &accesslog.AccessLog{
 			Name: xdsutil.FileAccessLog,
 		}
-		if util.IsXDSMarshalingToAnyEnabled(node) {
+		if util.IsProxyVersionGE11(node) {
 			buildAccessLog(fl, env)
+		}
+		if util.IsXDSMarshalingToAnyEnabled(node) {
 			acc.ConfigType = &accesslog.AccessLog_TypedConfig{TypedConfig: util.MessageToAny(fl)}
 		} else {
 			acc.ConfigType = &accesslog.AccessLog_Config{Config: util.MessageToStruct(fl)}
@@ -125,8 +127,7 @@ func buildNetworkFiltersStack(node *model.Proxy, port *model.Port, tcpFilter *li
 	filterstack := make([]listener.Filter, 0)
 	switch port.Protocol {
 	case model.ProtocolMongo:
-		filterstack = append(filterstack, buildMongoFilter(statPrefix, util.IsProxyVersionGE11(node)))
-		filterstack = append(filterstack, *tcpFilter)
+		filterstack = append(filterstack, buildMongoFilter(statPrefix, util.IsProxyVersionGE11(node)), *tcpFilter)
 	case model.ProtocolMySQL:
 		if util.IsProxyVersionGE11(node) {
 			filterstack = append(filterstack, buildMySQLFilter(statPrefix, util.IsProxyVersionGE11(node)))

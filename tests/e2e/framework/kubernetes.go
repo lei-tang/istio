@@ -51,6 +51,7 @@ const (
 	mcNonAuthInstallFileNamespace  = "istio-multicluster.yaml"
 	mcAuthInstallFileNamespace     = "istio-auth-multicluster.yaml"
 	mcRemoteInstallFile            = "istio-remote.yaml"
+	mcSplitHorizonInstallFile      = "istio-multicluster-split-horizon.yaml"
 	istioSystem                    = "istio-system"
 	istioIngressServiceName        = "istio-ingress"
 	istioIngressLabel              = "ingress"
@@ -68,12 +69,15 @@ const (
 	rootCertFileName               = "samples/certs/root-cert.pem"
 	certChainFileName              = "samples/certs/cert-chain.pem"
 	helmInstallerName              = "helm"
+	remoteNetworkName              = "network2"
+	istioHelmChartName             = "istio"
 	// CRD files that should be installed during testing
 	// NB: these files come from the directory install/kubernetes/helm/istio-init/files/*crd*
 	//     and contain all CRDs used by Istio during runtime
-	zeroCRDInstallFile = "crd-10.yaml"
-	oneCRDInstallFile  = "crd-11.yaml"
-	twoCRDInstallFile  = "crd-certmanager-10.yaml"
+	zeroCRDInstallFile        = "crd-10.yaml"
+	oneCRDInstallFile         = "crd-11.yaml"
+	twoCRDInstallFile         = "crd-12.yaml"
+	certManagerCRDInstallFile = "crd-certmanager-10.yaml"
 	// PrimaryCluster identifies the primary cluster
 	PrimaryCluster = "primary"
 	// RemoteCluster identifies the remote cluster
@@ -85,6 +89,7 @@ const (
 
 var (
 	namespace          = flag.String("namespace", "", "Namespace to use for testing (empty to create/delete temporary one)")
+	istioNamespace     = flag.String("istio_namespace", "istio-system", "Istio system namespace (default `istio-system`)")
 	mixerHub           = flag.String("mixer_hub", os.Getenv("HUB"), "Mixer hub")
 	mixerTag           = flag.String("mixer_tag", os.Getenv("TAG"), "Mixer tag")
 	pilotHub           = flag.String("pilot_hub", os.Getenv("HUB"), "Pilot hub")
@@ -109,6 +114,7 @@ var (
 	imagePullPolicy     = flag.String("image_pull_policy", "", "Specifies an override for the Docker image pull policy to be used")
 	multiClusterDir     = flag.String("cluster_registry_dir", "",
 		"Directory name for the cluster registry config. When provided a multicluster test to be run across two clusters.")
+	splitHorizon             = flag.Bool("split_horizon", false, "Set up a split horizon EDS multi-cluster test environment")
 	useGalleyConfigValidator = flag.Bool("use_galley_config_validator", true, "Use galley configuration validation webhook")
 	installer                = flag.String("installer", "kubectl", "Istio installer, default to kubectl, or helm")
 	useMCP                   = flag.Bool("use_mcp", true, "use MCP for configuring Istio components")
@@ -223,7 +229,7 @@ func newKubeInfo(tmpDir, runID, baseVersion string) (*KubeInfo, error) {
 		}
 	}
 	yamlDir := filepath.Join(tmpDir, "yaml")
-	i, err := NewIstioctl(yamlDir, *namespace, *proxyHub, *proxyTag, *imagePullPolicy, *kubeInjectCM, "")
+	i, err := NewIstioctl(yamlDir, *namespace, *istioNamespace, *kubeInjectCM, "")
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +246,6 @@ func newKubeInfo(tmpDir, runID, baseVersion string) (*KubeInfo, error) {
 		if err = os.Chmod(i.localPath, 0755); err != nil {
 			return nil, err
 		}
-		i.defaultProxy = true
 	} else {
 		releaseDir = util.GetResourcePath("")
 	}
@@ -271,18 +276,25 @@ func newKubeInfo(tmpDir, runID, baseVersion string) (*KubeInfo, error) {
 			return nil, err
 		}
 		// Create Istioctl for remote using injectConfigMap on remote (not the same as master cluster's)
-		remoteI, err = NewIstioctl(yamlDir, *namespace, *proxyHub, *proxyTag, *imagePullPolicy, "istio-sidecar-injector", remoteKubeConfig)
+		remoteI, err = NewIstioctl(yamlDir, *namespace, *istioNamespace, "istio-sidecar-injector", remoteKubeConfig)
 		if err != nil {
 			return nil, err
 		}
 		if baseVersion != "" {
 			remoteI.localPath = filepath.Join(releaseDir, "/bin/istioctl")
-			remoteI.defaultProxy = true
 		}
-		aRemote = NewAppManager(tmpDir, *namespace, remoteI, remoteKubeConfig)
+		if *splitHorizon {
+			// For remote Istio configuration in a split horizon test we don't wait
+			// for the deployments because they won't be able to connect to Pilot
+			// until their service is added by watching the remote k8s api. Adding
+			// the remote k8s api watcher is done later on in the test.
+			aRemote = NewAppManager(tmpDir, *namespace, remoteI, remoteKubeConfig, false)
+		} else {
+			aRemote = NewAppManager(tmpDir, *namespace, remoteI, remoteKubeConfig, true)
+		}
 	}
 
-	a := NewAppManager(tmpDir, *namespace, i, kubeConfig)
+	a := NewAppManager(tmpDir, *namespace, i, kubeConfig, true)
 
 	kubeAccessor, err := testKube.NewAccessor(kubeConfig, tmpDir)
 	if err != nil {
@@ -380,11 +392,9 @@ func (k *KubeInfo) Setup() error {
 				log.Error("Failed to execute Istio helm tests.")
 				return err
 			}
-		} else {
-			if err = k.deployIstio(); err != nil {
-				log.Error("Failed to deploy Istio.")
-				return err
-			}
+		} else if err = k.deployIstio(); err != nil {
+			log.Error("Failed to deploy Istio.")
+			return err
 		}
 		// Create the ingress secret.
 		certDir := util.GetResourcePath("./tests/testdata/certs")
@@ -463,10 +473,10 @@ func (k *KubeInfo) doGetIngress(serviceName string, podLabel string, lock sync.L
 	}
 	if k.localCluster {
 		*ingress, *ingressErr = util.GetIngress(serviceName, podLabel,
-			k.Namespace, k.KubeConfig, util.NodePortServiceType)
+			k.Istioctl.istioNamespace, k.KubeConfig, util.NodePortServiceType, true)
 	} else {
 		*ingress, *ingressErr = util.GetIngress(serviceName, podLabel,
-			k.Namespace, k.KubeConfig, util.LoadBalancerServiceType)
+			k.Istioctl.istioNamespace, k.KubeConfig, util.LoadBalancerServiceType, true)
 	}
 
 	// So far we only do http ingress
@@ -486,7 +496,7 @@ func (k *KubeInfo) Teardown() error {
 	}
 	if *installer == helmInstallerName {
 		// clean up using helm
-		err := util.HelmDelete(k.Namespace)
+		err := util.HelmDelete(istioHelmChartName)
 		if err != nil {
 			return nil
 		}
@@ -505,7 +515,16 @@ func (k *KubeInfo) Teardown() error {
 		}
 
 		if *clusterWide {
-			istioYaml := getClusterWideInstallFile()
+			var istioYaml string
+			if *multiClusterDir != "" {
+				if *authEnable {
+					istioYaml = mcAuthInstallFileNamespace
+				} else {
+					istioYaml = mcNonAuthInstallFileNamespace
+				}
+			} else {
+				istioYaml = getClusterWideInstallFile()
+			}
 
 			testIstioYaml := filepath.Join(k.TmpDir, "yaml", istioYaml)
 
@@ -541,8 +560,10 @@ func (k *KubeInfo) Teardown() error {
 		}
 	}
 
-	// confirm the namespace is deleted as it will cause future creation to fail
-	maxAttempts := 600
+	// NB: Increasing maxAttempts much past 230 seconds causes the CI infrastructure
+	// to terminate the test run not reporting what actually failed in the deletion.
+	maxAttempts := 180
+
 	namespaceDeleted := false
 	validatingWebhookConfigurationExists := false
 	log.Infof("Deleting namespace %v", k.Namespace)
@@ -643,10 +664,17 @@ func (k *KubeInfo) deepCopy(src map[string][]string) map[string][]string {
 func (k *KubeInfo) deployIstio() error {
 	istioYaml := nonAuthInstallFileNamespace
 	if *multiClusterDir != "" {
-		if *authEnable {
-			istioYaml = mcAuthInstallFileNamespace
+		if *splitHorizon {
+			if !*authEnable {
+				return errors.New("the split horizon test can only work with auth enabled")
+			}
+			istioYaml = mcSplitHorizonInstallFile
 		} else {
-			istioYaml = mcNonAuthInstallFileNamespace
+			if *authEnable {
+				istioYaml = mcAuthInstallFileNamespace
+			} else {
+				istioYaml = mcNonAuthInstallFileNamespace
+			}
 		}
 	} else if *clusterWide {
 		istioYaml = getClusterWideInstallFile()
@@ -716,7 +744,17 @@ func (k *KubeInfo) deployIstio() error {
 		}
 
 		testIstioYaml := filepath.Join(k.TmpDir, "yaml", mcRemoteInstallFile)
-		if err := k.generateRemoteIstio(testIstioYaml, *useAutomaticInjection, *proxyHub, *proxyTag); err != nil {
+		var err error
+		if *splitHorizon {
+			if *useAutomaticInjection {
+				return errors.New("the split horizon test does not work with automatic injection")
+			}
+
+			err = k.generateRemoteIstioForSplitHorizon(testIstioYaml, remoteNetworkName, *proxyHub, *proxyTag)
+		} else {
+			err = k.generateRemoteIstio(testIstioYaml, *useAutomaticInjection, *proxyHub, *proxyTag)
+		}
+		if err != nil {
 			log.Errorf("Generating Remote yaml %s failed", testIstioYaml)
 			return err
 		}
@@ -724,6 +762,11 @@ func (k *KubeInfo) deployIstio() error {
 			log.Errorf("Remote Istio %s deployment failed", testIstioYaml)
 			return err
 		}
+		if err := util.CreateMultiClusterSecret(k.Namespace, k.RemoteKubeConfig, k.KubeConfig); err != nil {
+			log.Errorf("Unable to create remote cluster secret on local cluster %s", err.Error())
+			return err
+		}
+		time.Sleep(10 * time.Second)
 	}
 
 	if *useAutomaticInjection {
@@ -852,7 +895,7 @@ func (k *KubeInfo) deployCRDs(kubernetesCRD string) error {
 func (k *KubeInfo) deployIstioWithHelm() error {
 	// Note: When adding a CRD to the install, a new CRDFile* constant is needed
 	// This slice contains the list of CRD files installed during testing
-	istioCRDFileNames := []string{zeroCRDInstallFile, oneCRDInstallFile, twoCRDInstallFile}
+	istioCRDFileNames := []string{zeroCRDInstallFile, oneCRDInstallFile, twoCRDInstallFile, certManagerCRDInstallFile}
 	// deploy all CRDs in Istio first
 	for _, yamlFileName := range istioCRDFileNames {
 		if err := k.deployCRDs(yamlFileName); err != nil {
@@ -923,7 +966,7 @@ func (k *KubeInfo) deployIstioWithHelm() error {
 
 	// helm install dry run - dry run seems to have problems
 	// with CRDs even in 2.9.2, pre-install is not executed
-	err = util.HelmInstallDryRun(workDir, "istio", valFile, k.Namespace, setValue)
+	err = util.HelmInstallDryRun(workDir, istioHelmChartName, valFile, k.Namespace, setValue)
 	if err != nil {
 		// dry run fail, let's fail early
 		log.Errorf("Helm dry run of istio chart failed %s, valueFile=%s, setValue=%s, namespace=%s",
@@ -932,7 +975,7 @@ func (k *KubeInfo) deployIstioWithHelm() error {
 	}
 
 	// helm install
-	err = util.HelmInstall(workDir, "istio", valFile, k.Namespace, setValue)
+	err = util.HelmInstall(workDir, istioHelmChartName, valFile, k.Namespace, setValue)
 	if err != nil {
 		log.Errorf("Helm install istio chart failed %s, valueFile=%s, setValue=%s, namespace=%s",
 			istioHelmInstallDir, valFile, setValue, k.Namespace)
@@ -993,28 +1036,6 @@ func (k *KubeInfo) generateSidecarInjector(src, dst string) error {
 	err = ioutil.WriteFile(dst, content, 0600)
 	if err != nil {
 		log.Errorf("Cannot write into generate sidecar injector file %s", dst)
-	}
-	return err
-}
-
-func (k *KubeInfo) generateGalleyConfigValidator(src, dst string) error {
-	content, err := ioutil.ReadFile(src)
-	if err != nil {
-		log.Errorf("Cannot read original yaml file %s", src)
-		return err
-	}
-
-	if !*clusterWide {
-		content = replacePattern(content, istioSystem, k.Namespace)
-	}
-
-	if *galleyHub != "" && *galleyTag != "" {
-		content = updateImage("galley", *galleyHub, *galleyTag, content)
-	}
-
-	err = ioutil.WriteFile(dst, content, 0600)
-	if err != nil {
-		log.Errorf("Cannot write into generate galley config validator %s", dst)
 	}
 	return err
 }
@@ -1088,6 +1109,11 @@ func (k *KubeInfo) generateIstio(src, dst string) error {
 	if *localCluster {
 		content = []byte(strings.Replace(string(content), util.LoadBalancerServiceType,
 			util.NodePortServiceType, 1))
+	}
+
+	if *splitHorizon {
+		registryName := filepath.Base(k.RemoteKubeConfig)
+		content = replacePattern(content, "N2_REGISTRY_TOKEN", registryName)
 	}
 
 	err = ioutil.WriteFile(dst, content, 0600)

@@ -25,7 +25,7 @@ import (
 
 	api "github.com/envoyproxy/go-control-plane/envoy/api/v2"
 	authapi "github.com/envoyproxy/go-control-plane/envoy/api/v2/auth"
-	core "github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
+	"github.com/envoyproxy/go-control-plane/envoy/api/v2/core"
 	sds "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v2"
 	"github.com/gogo/protobuf/types"
 	"golang.org/x/net/context"
@@ -420,8 +420,7 @@ func sdsRequestFetch(socket string, req *api.DiscoveryRequest) (*api.DiscoveryRe
 func setupConnection(socket string) (*grpc.ClientConn, error) {
 	var opts []grpc.DialOption
 
-	opts = append(opts, grpc.WithInsecure())
-	opts = append(opts, grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
+	opts = append(opts, grpc.WithInsecure(), grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
 		return net.DialTimeout("unix", socket, timeout)
 	}))
 
