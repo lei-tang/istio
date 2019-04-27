@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: vault
-        image: gcr.io/endpoints-jenkins/vault-tls-test:leitang
+        image: gcr.io/endpoints-authz-test1/vault-tls-test:vault-server-tls-istio-ci-cd-4-27-2019
         imagePullPolicy: "Always"
         securityContext:
           capabilities:

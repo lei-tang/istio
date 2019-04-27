@@ -11,9 +11,9 @@ gcloud auth login
 gcloud container clusters get-credentials $CLUSTER --zone $ZONE --project $PROJECT 
 
 # Grant cluster admin permissions to the current user (admin permissions are required to create the necessary RBAC rules for Istio).
-kubectl create clusterrolebinding cluster-admin-binding --clusterrole=cluster-admin --user=$(gcloud config get-value core/account)
+# kubectl create clusterrolebinding cluster-admin-binding --clusterrole=cluster-admin --user=$(gcloud config get-value core/account)
 
-source ./vault-cleanup.sh
+# source ./vault-cleanup.sh
 
 pushd ${ISTIO_DIR}
 # Authenticate to Container Registry,

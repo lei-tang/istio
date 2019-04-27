@@ -11,5 +11,6 @@
       "tls_cert_file":"/etc/vault/server-tls-cert.pem",
       "tls_key_file":"/etc/vault/server-tls-key.pem"
     }
-  }
+  },
+  "disable_mlock": true
 }

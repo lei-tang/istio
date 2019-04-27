@@ -4,11 +4,11 @@
 # based on your GKE project and cluster setting.
 # Your GKE project name
 
-export PROJECT=endpoints-jenkins
+export PROJECT=endpoints-authz-test1
 # Your GKE cluster zone
 export ZONE=us-west1-b
 # Your newly created GKE cluster name
-export CLUSTER=vault-tls-server
+export CLUSTER=vault-server-tls-istio-ci-cd
 
 # ISTIO_DIR points to your cloned istio directory
 export ISTIO_DIR=~/go/src/istio.io/istio
@@ -22,13 +22,13 @@ export HUB="gcr.io/${PROJECT}"
 # tag. To simplify development the development process when later using
 # updateVersion.sh you may find it helpful to set TAG to something consistent
 # such as $USER.
-export TAG=$USER
+export TAG=vault-server-tls-istio-ci-cd-4-27-2019
 # k8s Vault deployment name
 export VAULT_DEPLOY=vault-server
 # k8s Vault service name
 export VAULT_SERVICE=vault-server
 # k8s Vault docker image name
-export VAULT_DOCKER_IMAGE=vault-test
+export VAULT_DOCKER_IMAGE=vault-tls-test
 # Vault port number
 export VAULT_PORT=8200
 
