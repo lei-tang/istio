@@ -385,7 +385,7 @@ func TestNewSpireClient(t *testing.T) {
 				return
 			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Minute)
 			defer cancel()
 			resp, err := cli.CSRSign(ctx, []byte(tc.signCert), fakeToken, 1)
 
@@ -644,7 +644,7 @@ func createCACertificate(t *testing.T, privateKey crypto.PrivateKey, spiffeID st
 			Country:      []string{"US"},
 			Organization: []string{"SPIRE"},
 		},
-		NotAfter: now.Add(10 * time.Minute),
+		NotAfter: now.Add(1000 * time.Minute),
 		URIs:     uris,
 
 		KeyUsage: x509.KeyUsageDigitalSignature |
@@ -685,7 +685,7 @@ func createClientCertificate(t *testing.T, csrDER string, privateKey crypto.Priv
 			Country:      []string{"US"},
 			Organization: []string{"SPIRE"},
 		},
-		NotAfter: now.Add(10 * time.Minute),
+		NotAfter: now.Add(1000 * time.Minute),
 		URIs:     req.URIs,
 		KeyUsage: x509.KeyUsageKeyEncipherment |
 			x509.KeyUsageKeyAgreement |
