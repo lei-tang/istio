@@ -155,6 +155,30 @@ func runCertificateController() {
 		log.Errorf("Failed to create secret controller: %v", err)
 		os.Exit(1)
 	}
+
+	// TODO: when the controller starts, creates the certificate and key of the secret for
+	// Galley and Sidecar Injector. Add createSecret() to do this task.
+	// TODO: Does it need a mutex for each public function to prevent race condition?
+	// scrtDeleted(), scrtUpdated(), and createSecret() should have mutex if they run concurrently.
+	// However, if createSecret() is only called once when the secret controller starts and
+	// before scrtDeleted() and scrtUpdated() are set as callback, they will not have race condition.
+	// But will someone use createSecret() at wrong places?
+	for _, sa := range webhookServiceAccounts {
+		chain, key, err := sc.GenKeyCertK8sCA(sa, opts.certificateNamespace)
+		if err != nil {
+			log.Errorf("failed to create certificate for service account (%v) in namespace (%v): %v",
+				sa, opts.certificateNamespace, err)
+			os.Exit(1)
+		}
+		log.Debugf("certificate chain for service account (%v) in namespace (%v) is: %v",
+			sa, opts.certificateNamespace, string(chain))
+		if len(key) <=0 || len(chain) <= 0 {
+			log.Errorf("empty key or certificate for service account (%v) in namespace (%v)",
+				sa, opts.certificateNamespace)
+			os.Exit(1)
+		}
+	}
+
 	sc.Run(stopCh)
 
 	for {

@@ -172,6 +172,7 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 			},
 		}
 	})
+	// The certificate rotation is handled by scrtUpdated().
 	c.scrtStore, c.scrtController =
 		cache.NewInformer(scrtLW, &v1.Secret{}, secretResyncPeriod, cache.ResourceEventHandlerFuncs{
 			DeleteFunc: c.scrtDeleted,
@@ -183,8 +184,7 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 
 // Run starts the SecretController until a value is sent to stopCh.
 func (sc *SecretController) Run(stopCh chan struct{}) {
-	// TODO: when the controller starts, updates the certificate and key of the secret.
-	sc.genKeyCertK8sCA("istio-galley-service-account", "istio-system")
+	// TODO: does this needs to be in a different thread?
 	go sc.scrtController.Run(stopCh)
 }
 
@@ -351,6 +351,8 @@ func (sc *SecretController) generateKeyAndCert(saName string, saNamespace string
 	return certPEM, keyPEM, nil
 }
 
+// scrtUpdated() is the callback function for update event. It handles
+// the certificate rotations.
 func (sc *SecretController) scrtUpdated(oldObj, newObj interface{}) {
 	scrt, ok := newObj.(*v1.Secret)
 	if !ok {
@@ -404,7 +406,8 @@ func (sc *SecretController) refreshSecret(scrt *v1.Secret) error {
 	namespace := scrt.GetNamespace()
 	saName := scrt.Annotations[ServiceAccountNameAnnotationKey]
 
-	chain, key, err := sc.generateKeyAndCert(saName, namespace)
+	// chain, key, err := sc.generateKeyAndCert(saName, namespace)
+	chain, key, err := sc.GenKeyCertK8sCA(saName, namespace)
 	if err != nil {
 		return err
 	}
@@ -418,7 +421,7 @@ func (sc *SecretController) refreshSecret(scrt *v1.Secret) error {
 }
 
 // Generate a certificate and key from k8s CA
-func (sc *SecretController) genKeyCertK8sCA(saName string, saNamespace string) ([]byte, []byte, error) {
+func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) ([]byte, []byte, error) {
 	// 0. Generate a CSR
 	// 1. Submit a CSR
 	// 2. Approve a CSR
@@ -527,7 +530,7 @@ func (sc *SecretController) genKeyCertK8sCA(saName string, saNamespace string) (
 	// 3. Read the signed certificate
 	var reqSigned *cert.CertificateSigningRequest
 	for i := 0; i < maxNumCertRead; i++ {
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(certReadInterval)
 		reqSigned, err = sc.certClient.CertificateSigningRequests().Get(csrName, metav1.GetOptions{})
 		if err != nil {
 			log.Errorf("failed to get the CSR (%v): %v", csrName, err)
