@@ -163,6 +163,15 @@ func runCertificateController() {
 	// However, if createSecret() is only called once when the secret controller starts and
 	// before scrtDeleted() and scrtUpdated() are set as callback, they will not have race condition.
 	// But will someone use createSecret() at wrong places?
+
+	// TODO: run a container in k8s for Cert. Controller. Check whether the default
+	// service account of the pod is sufficient for Cert. Controller for the following operations:
+	// - Send CSR for signing.
+	// - Approve CSR, https://kubernetes.io/docs/tasks/tls/managing-tls-in-a-cluster/#approving-certificate-signing-requests
+	// - Read signed certificate.
+	// - Set a secret with certificate.
+	// - Monitor secret expiration.
+	// - What kind of RBAC config does a webhook needs?
 	for _, sa := range webhookServiceAccounts {
 		chain, key, err := sc.GenKeyCertK8sCA(sa, opts.certificateNamespace)
 		if err != nil {

@@ -559,6 +559,9 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 		return nil, nil, err
 	}
 
-	// TODO: append the certificate chain to the signed certificate
+	// TODO: append the certificate chain to the signed certificate.
+	// Verify the certificate chain before returning the certificate (similar to
+	// SPIRE agent calls golang certificate API to verify certificate chain):
+	// - the verification will handle the case that the root certificate changes.
 	return certPEM, keyPEM, nil
 }
