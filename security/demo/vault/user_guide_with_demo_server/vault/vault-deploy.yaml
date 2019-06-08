@@ -1,0 +1,23 @@
+################################
+# Deploy Vault as a service in a cluster
+################################
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: vault-tls-basic-server
+  namespace:  default
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: vault-tls-basic-server
+    spec:
+      containers:
+      - name: vault
+        image: gcr.io/istio-security-testing/vault-tls-basic-server:vault-server-user-guide-6-7-2019
+        imagePullPolicy: "Always"
+        securityContext:
+          capabilities:
+            add:
+            - IPC_LOCK

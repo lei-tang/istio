@@ -1,0 +1,13 @@
+FROM vault:0.10.3
+
+COPY --chown=vault vault-tls-config.hcl /etc/vault/vault-tls-config.hcl
+COPY --chown=vault vault-tls-cert.pem /etc/vault/server-tls-cert.pem
+COPY --chown=vault vault-tls-key.pem /etc/vault/server-tls-key.pem
+
+RUN mkdir /var/lib/vault && chown -R vault /var/lib/vault
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+# Override the CMD in the parent image
+# By default you'll get a single-node development server that stores everything
+# in RAM and bootstraps itself. Don't use this configuration for production.
+CMD ["server", "-config=/etc/vault/vault-tls-config.hcl", "-log-level=trace"]
