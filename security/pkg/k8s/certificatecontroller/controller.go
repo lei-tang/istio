@@ -16,14 +16,16 @@ package certificatecontroller
 
 import (
 	"bytes"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"strings"
 	"time"
 
 	cert "k8s.io/api/certificates/v1beta1"
 	certclient "k8s.io/client-go/kubernetes/typed/certificates/v1beta1"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -69,6 +71,10 @@ const (
 	certReadInterval = 500 * time.Millisecond
 	// The number of tries for reading a certificate
 	maxNumCertRead = 20
+
+	// The path storing the CA certificate of the k8s apiserver
+	// caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
 )
 
 // DNSNameEntry stores the service name and namespace to construct the DNS id.
@@ -426,7 +432,8 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 	// 1. Submit a CSR
 	// 2. Approve a CSR
 	// 3. Read the signed certificate
-	// 4. Delete CSR
+	// 4. Clean up the artifacts (e.g., delete CSR)
+	csrCreated := false
 	spiffeUri, err := spiffe.GenSpiffeURI(saNamespace, saName)
 	if err != nil {
 		log.Errorf("failed to generate a SPIFFE URI: %v", err)
@@ -511,6 +518,7 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 		}
 	}
 	log.Debugf("CSR (%v) is created, req.: %v", csrName, r)
+	csrCreated = true
 
 	// 2. Approve a CSR
 	log.Debugf("approve CSR (%v) ...", csrName)
@@ -522,10 +530,10 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 	reqApproval, err := sc.certClient.CertificateSigningRequests().UpdateApproval(r)
 	if err != nil {
 		log.Debugf("failed to approve CSR (%v): %v", csrName, err)
+		sc.cleanUpCertGen(csrName, csrCreated)
 		return nil, nil, err
 	}
 	log.Debugf("CSR (%v) is approved, req.: %v", csrName, reqApproval)
-
 
 	// 3. Read the signed certificate
 	var reqSigned *cert.CertificateSigningRequest
@@ -534,9 +542,11 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 		reqSigned, err = sc.certClient.CertificateSigningRequests().Get(csrName, metav1.GetOptions{})
 		if err != nil {
 			log.Errorf("failed to get the CSR (%v): %v", csrName, err)
+			sc.cleanUpCertGen(csrName, csrCreated)
 			return nil, nil, err
 		}
 		if reqSigned.Status.Certificate != nil {
+			// Certificate is ready
 			break
 		}
 	}
@@ -548,20 +558,73 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 		certPEM = reqSigned.Status.Certificate
 	} else {
 		log.Errorf("failed to read the certificate for CSR (%v)", csrName)
+		// Output the first CertificateDenied condition, if any, in the status
+		for _, c := range r.Status.Conditions {
+			if c.Type == cert.CertificateDenied {
+				log.Errorf("CertificateDenied, name: %v, uid: %v, cond-type: %v, cond: %s",
+					r.Name, r.UID, c.Type, c.String())
+				break
+			}
+		}
+		sc.cleanUpCertGen(csrName, csrCreated)
 		return nil, nil, fmt.Errorf("failed to read the certificate for CSR (%v)", csrName)
 	}
 
-	// 4. Delete CSR
-	log.Debugf("delete CSR: %v", csrName)
-	err = sc.certClient.CertificateSigningRequests().Delete(csrName, nil)
-	if err != nil {
-		log.Errorf("failed to delete CSR (%v): %v", csrName, err)
-		return nil, nil, err
-	}
-
 	// TODO: append the certificate chain to the signed certificate.
+	// When Controller is running in a container,
+	// it can read the ca cert from /var/run/secrets/kubernetes.io/serviceaccount/ca.crt.
+	// The ca.crt is also in the default secret.
+
+	// Read the CA certificate of the k8s apiserver
+	caCert, err := ioutil.ReadFile(caCertPath)
+	if err != nil {
+		sc.cleanUpCertGen(csrName, csrCreated)
+		return nil, nil, fmt.Errorf("failed to read the CA certificate of k8s API server: %v", err)
+	}
 	// Verify the certificate chain before returning the certificate (similar to
 	// SPIRE agent calls golang certificate API to verify certificate chain):
 	// - the verification will handle the case that the root certificate changes.
-	return certPEM, keyPEM, nil
+	roots := x509.NewCertPool()
+	if roots == nil {
+		sc.cleanUpCertGen(csrName, csrCreated)
+		return nil, nil, fmt.Errorf("failed to create cert pool")
+	}
+	if ok := roots.AppendCertsFromPEM(caCert); !ok {
+		sc.cleanUpCertGen(csrName, csrCreated)
+		return nil, nil, fmt.Errorf("failed to append CA certificate")
+	}
+	certParsed, err := util.ParsePemEncodedCertificate(certPEM)
+	if err != nil {
+		log.Errorf("failed to parse the certificate: %v", err)
+		sc.cleanUpCertGen(csrName, csrCreated)
+		return nil, nil, fmt.Errorf("failed to parse the certificate: %v", err)
+	}
+	_, err = certParsed.Verify(x509.VerifyOptions{
+		Roots:         roots,
+	})
+	if err != nil {
+		log.Errorf("failed to verify the certificate chain: %v", err)
+		sc.cleanUpCertGen(csrName, csrCreated)
+		return nil, nil, fmt.Errorf("failed to verify the certificate chain: %v", err)
+	}
+
+	certChain := []byte{}
+	certChain = append(certChain, certPEM...)
+	certChain = append(certChain, caCert...)
+
+	err = sc.cleanUpCertGen(csrName, csrCreated)
+	return certChain, keyPEM, nil
+}
+
+func (sc *SecretController) cleanUpCertGen(csrName string, csrCreated bool) (error) {
+	if csrCreated {
+		// Delete CSR
+		log.Debugf("delete CSR: %v", csrName)
+		err := sc.certClient.CertificateSigningRequests().Delete(csrName, nil)
+		if err != nil {
+			log.Errorf("failed to delete CSR (%v): %v", csrName, err)
+			return err
+		}
+	}
+	return nil
 }
