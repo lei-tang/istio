@@ -156,6 +156,10 @@ func runCertificateController() {
 		os.Exit(1)
 	}
 
+	// Release 1: get rid of dependency on Citadel. Webhook certificates are provisioned through
+	// Chiron.
+	// Release 2: manage WebhookConfiguration for Galley and SidecarInjector.
+
 	// TODO: when the controller starts, creates the certificate and key of the secret for
 	// Galley and Sidecar Injector. Add createSecret() to do this task.
 	// TODO: Does it need a mutex for each public function to prevent race condition?

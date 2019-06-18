@@ -73,8 +73,9 @@ const (
 	maxNumCertRead = 20
 
 	// The path storing the CA certificate of the k8s apiserver
-	// caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
+	caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	// caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
+	// caCertPath = "/Users/leitang/temp/cert-root.pem"
 )
 
 // DNSNameEntry stores the service name and namespace to construct the DNS id.
@@ -579,6 +580,7 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 	caCert, err := ioutil.ReadFile(caCertPath)
 	if err != nil {
 		sc.cleanUpCertGen(csrName, csrCreated)
+		log.Debugf("CA cert path is : %v", caCertPath)
 		return nil, nil, fmt.Errorf("failed to read the CA certificate of k8s API server: %v", err)
 	}
 	// Verify the certificate chain before returning the certificate (similar to
