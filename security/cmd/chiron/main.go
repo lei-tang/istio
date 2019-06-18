@@ -32,15 +32,6 @@ var (
 			runCertificateController()
 		},
 	}
-	// ServiceAccount/DNS pair for generating DNS names in certificates.
-	webhookServiceAccounts = []string{
-		"istio-sidecar-injector-service-account",
-		"istio-galley-service-account",
-	}
-	webhookServiceNames = []string{
-		"istio-sidecar-injector",
-		"istio-galley",
-	}
 )
 
 type cliOptions struct {
@@ -118,6 +109,17 @@ func init() {
 	opts.ctrlzOptions.AttachCobraFlags(rootCmd)
 }
 
+func main() {
+	if err := rootCmd.Execute(); err != nil {
+		log.Errora(err)
+		os.Exit(1)
+	}
+
+	// TODO: wait on a channel until the controller terminates
+	for true {
+	}
+}
+
 func runCertificateController() {
 	_, _ = ctrlz.Run(opts.ctrlzOptions, nil)
 
@@ -126,10 +128,10 @@ func runCertificateController() {
 		os.Exit(1)
 	}
 
-	log.Debug("Enter runCertificateController")
+	log.Debug("Enter runCertificateController()")
 
-	webhooks := cc.ConstructCustomDNSNames(webhookServiceAccounts,
-		webhookServiceNames, opts.certificateNamespace, opts.customDNSNames)
+	webhooks := cc.ConstructCustomDNSNames(cc.WebhookServiceAccounts,
+		cc.WebhookServiceNames, opts.certificateNamespace, opts.customDNSNames)
 	log.Debugf("webhooks: %v", webhooks)
 
 	k8sClient, err := kubelib.CreateClientset(opts.kubeConfigFile, "")
@@ -176,7 +178,7 @@ func runCertificateController() {
 	// - Set a secret with certificate.
 	// - Monitor secret expiration.
 	// - What kind of RBAC config does a webhook needs?
-	for _, sa := range webhookServiceAccounts {
+	for _, sa := range cc.WebhookServiceAccounts {
 		chain, key, err := sc.GenKeyCertK8sCA(sa, opts.certificateNamespace)
 		if err != nil {
 			log.Errorf("failed to create certificate for service account (%v) in namespace (%v): %v",
@@ -193,14 +195,5 @@ func runCertificateController() {
 	}
 
 	sc.Run(stopCh)
-
-	for {
-	}
 }
 
-func main() {
-	if err := rootCmd.Execute(); err != nil {
-		log.Errora(err)
-		os.Exit(1)
-	}
-}

@@ -73,9 +73,23 @@ const (
 	maxNumCertRead = 20
 
 	// The path storing the CA certificate of the k8s apiserver
-	caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	// caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
+	// caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
 	// caCertPath = "/Users/leitang/temp/cert-root.pem"
+)
+
+var (
+	// TODO: change Citadel webhookServiceAccounts to use the webhook sa here.
+	// ServiceAccount/DNS pair for generating DNS names in certificates.
+	WebhookServiceAccounts = []string{
+		"istio-sidecar-injector-service-account",
+		"istio-galley-service-account",
+	}
+
+	WebhookServiceNames = []string{
+		"istio-sidecar-injector",
+		"istio-galley",
+	}
 )
 
 // DNSNameEntry stores the service name and namespace to construct the DNS id.
@@ -123,6 +137,10 @@ type SecretController struct {
 	// DNS-enabled serviceAccount.namespace to service pair
 	dnsNames map[string]*DNSNameEntry
 
+	// Controller and store for service account objects.
+	saController cache.Controller
+	saStore      cache.Store
+
 	// Controller and store for secret objects.
 	scrtController cache.Controller
 	scrtStore      cache.Store
@@ -166,6 +184,23 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 		c.namespaces[ns] = struct{}{}
 	}
 
+	saLW := listwatch.MultiNamespaceListerWatcher(namespaces, func(namespace string) cache.ListerWatcher {
+		return &cache.ListWatch{
+			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+				return core.ServiceAccounts(namespace).List(options)
+			},
+			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+				return core.ServiceAccounts(namespace).Watch(options)
+			},
+		}
+	})
+
+	rehf := cache.ResourceEventHandlerFuncs{
+		AddFunc:    c.saAdded,
+		DeleteFunc: c.saDeleted,
+	}
+	c.saStore, c.saController = cache.NewInformer(saLW, &v1.ServiceAccount{}, time.Minute, rehf)
+
 	istioSecretSelector := fields.SelectorFromSet(map[string]string{"type": IstioSecretType}).String()
 	scrtLW := listwatch.MultiNamespaceListerWatcher(namespaces, func(namespace string) cache.ListerWatcher {
 		return &cache.ListWatch{
@@ -191,8 +226,13 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 
 // Run starts the SecretController until a value is sent to stopCh.
 func (sc *SecretController) Run(stopCh chan struct{}) {
-	// TODO: does this needs to be in a different thread?
 	go sc.scrtController.Run(stopCh)
+
+	// saAdded calls upsertSecret to update and insert secret
+	// it throws error if the secret cache is not synchronized, but the secret exists in the system
+	cache.WaitForCacheSync(stopCh, sc.scrtController.HasSynced)
+
+	go sc.saController.Run(stopCh)
 }
 
 // GetSecretName returns the secret name for a given service account name.
@@ -230,6 +270,31 @@ func (sc *SecretController) istioEnabledObject(obj metav1.Object) bool {
 		}
 	}
 	return enabled
+}
+
+// Handles the event where a service account is added.
+func (sc *SecretController) saAdded(obj interface{}) {
+	acct := obj.(*v1.ServiceAccount)
+	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace(), "istio-system") {
+		// Only handle Webhook SA
+		// TODO: 1. replace the hardcoded webhook namespace. 2. change Citadel to not handle Webhook SA
+		return
+	}
+	if sc.istioEnabledObject(acct.GetObjectMeta()) {
+		sc.upsertSecret(acct.GetName(), acct.GetNamespace())
+	}
+	sc.monitoring.ServiceAccountCreation.Inc()
+}
+
+// Handles the event where a service account is deleted.
+func (sc *SecretController) saDeleted(obj interface{}) {
+	acct := obj.(*v1.ServiceAccount)
+	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace(), "istio-system") {
+		// Only handle Webhook SA
+		return
+	}
+	sc.deleteSecret(acct.GetName(), acct.GetNamespace())
+	sc.monitoring.ServiceAccountDeletion.Inc()
 }
 
 func (sc *SecretController) upsertSecret(saName, saNamespace string) {
@@ -629,4 +694,13 @@ func (sc *SecretController) cleanUpCertGen(csrName string, csrCreated bool) (err
 		}
 	}
 	return nil
+}
+
+func (sc *SecretController) isWebhookSA(name, namespace, istioNamespace string) (bool) {
+	for _, n := range WebhookServiceAccounts {
+		if n == name && namespace == istioNamespace {
+			return true
+		}
+	}
+	return false
 }
