@@ -152,7 +152,7 @@ func runCertificateController() {
 	sc, err := cc.NewSecretController(ca, opts.explicitOptInRequired,
 		opts.workloadCertTTL,
 		opts.workloadCertGracePeriodRatio, opts.workloadCertMinGracePeriod, false,
-		k8sClient.CoreV1(), k8sClient.CertificatesV1beta1(), false, opts.pkcs8Keys, []string{}, webhooks,
+		k8sClient.CoreV1(), k8sClient.CertificatesV1beta1(), false, opts.pkcs8Keys, []string{opts.certificateNamespace}, webhooks,
 		opts.certificateNamespace)
 	if err != nil {
 		log.Errorf("Failed to create secret controller: %v", err)

@@ -23,6 +23,20 @@ const (
 )
 
 var (
+	serviceAccountCreationCounts = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "certificate_controller",
+		Subsystem: "certificate_controller",
+		Name:      "svc_acc_created_cert_count",
+		Help:      "The number of certificates created due to service account creation.",
+	}, []string{})
+
+	serviceAccountDeletionCounts = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "certificate_controller",
+		Subsystem: "certificate_controller",
+		Name:      "svc_acc_deleted_cert_count",
+		Help:      "The number of certificates deleted due to service account deletion.",
+	}, []string{})
+
 	secretDeletionCounts = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "certificate_controller",
 		Subsystem: "certificate_controller",
@@ -46,6 +60,8 @@ var (
 )
 
 func init() {
+	prometheus.MustRegister(serviceAccountCreationCounts)
+	prometheus.MustRegister(serviceAccountDeletionCounts)
 	prometheus.MustRegister(secretDeletionCounts)
 	prometheus.MustRegister(csrErrorCounts)
 	prometheus.MustRegister(certSignErrorCounts)
@@ -63,6 +79,8 @@ type monitoringMetrics struct {
 // newMonitoringMetrics creates a new monitoringMetrics.
 func newMonitoringMetrics() monitoringMetrics {
 	return monitoringMetrics{
+		ServiceAccountCreation: serviceAccountCreationCounts.With(prometheus.Labels{}),
+		ServiceAccountDeletion: serviceAccountDeletionCounts.With(prometheus.Labels{}),
 		SecretDeletion:         secretDeletionCounts.With(prometheus.Labels{}),
 		CSRError:               csrErrorCounts.With(prometheus.Labels{}),
 		certSignErrors:         certSignErrorCounts,
@@ -72,4 +90,3 @@ func newMonitoringMetrics() monitoringMetrics {
 func (m *monitoringMetrics) GetCertSignError(err string) prometheus.Counter {
 	return m.certSignErrors.With(prometheus.Labels{errorlabel: err})
 }
-

@@ -62,4 +62,3 @@ func ConstructCustomDNSNames(serviceAccounts []string, serviceNames []string,
 	}
 	return result
 }
-

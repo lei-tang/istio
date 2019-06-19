@@ -74,8 +74,8 @@ const (
 
 	// The path storing the CA certificate of the k8s apiserver
 	// caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	// caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
-	caCertPath = "/Users/leitang/temp/cert-root.pem"
+	caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
+	// caCertPath = "/Users/leitang/temp/cert-root.pem"
 )
 
 var (
@@ -315,14 +315,17 @@ func (sc *SecretController) upsertSecret(saName, saNamespace string) {
 	}
 
 	// Now we know the secret does not exist yet. So we create a new one.
-	chain, key, err := sc.generateKeyAndCert(saName, saNamespace)
+	//chain, key, err := sc.generateKeyAndCert(saName, saNamespace)
+	chain, key, err := sc.GenKeyCertK8sCA(saName, saNamespace)
 	if err != nil {
 		log.Errorf("Failed to generate key and certificate for service account %q in namespace %q (error %v)",
 			saName, saNamespace, err)
-
 		return
 	}
-	rootCert := sc.ca.GetCAKeyCertBundle().GetRootCertPem()
+	rootCert, err := readCACert()
+	if err != nil {
+		return
+	}
 	secret.Data = map[string][]byte{
 		CertChainID:  chain,
 		PrivateKeyID: key,
@@ -381,6 +384,7 @@ func (sc *SecretController) scrtDeleted(obj interface{}) {
 	}
 }
 
+// TODO: remove this function since it has been replaced by GenKeyCertK8sCA().
 func (sc *SecretController) generateKeyAndCert(saName string, saNamespace string) ([]byte, []byte, error) {
 	id := spiffe.MustGenSpiffeURI(saNamespace, saName)
 	if sc.dnsNames != nil {
@@ -414,7 +418,6 @@ func (sc *SecretController) generateKeyAndCert(saName string, saNamespace string
 		return nil, nil, err
 	}
 
-	//TODO: use k8s CA to sign the CSR
 	certChainPEM := sc.ca.GetCAKeyCertBundle().GetCertChainPem()
 	certPEM, signErr := sc.ca.Sign(csrPEM, strings.Split(id, ","), sc.certTTL, sc.forCA)
 	if signErr != nil {
@@ -438,6 +441,7 @@ func (sc *SecretController) scrtUpdated(oldObj, newObj interface{}) {
 	namespace := scrt.GetNamespace()
 	name := scrt.GetName()
 
+	// TODO: only handle webhook secret update events
 	certBytes := scrt.Data[CertChainID]
 	cert, err := util.ParsePemEncodedCertificate(certBytes)
 	if err != nil {
@@ -460,8 +464,10 @@ func (sc *SecretController) scrtUpdated(oldObj, newObj interface{}) {
 			certLifeTime, sc.gracePeriodRatio, gracePeriod, sc.minGracePeriod)
 		gracePeriod = sc.minGracePeriod
 	}
-	// TODO: change to get k8s CA root certificate
-	rootCertificate := sc.ca.GetCAKeyCertBundle().GetRootCertPem()
+	rootCertificate, err := readCACert()
+	if err != nil {
+		return
+	}
 
 	// Refresh the secret if 1) the certificate contained in the secret is about
 	// to expire, or 2) the root certificate in the secret is different than the
@@ -490,7 +496,12 @@ func (sc *SecretController) refreshSecret(scrt *v1.Secret) error {
 
 	scrt.Data[CertChainID] = chain
 	scrt.Data[PrivateKeyID] = key
-	scrt.Data[RootCertID] = sc.ca.GetCAKeyCertBundle().GetRootCertPem()
+	// TODO: change to get k8s CA root certificate
+	caCert, err := readCACert()
+	if err != nil {
+		return err
+	}
+	scrt.Data[RootCertID] = caCert
 
 	_, err = sc.core.Secrets(namespace).Update(scrt)
 	return err
@@ -646,11 +657,10 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 	// The ca.crt is also in the default secret.
 
 	// Read the CA certificate of the k8s apiserver
-	caCert, err := ioutil.ReadFile(caCertPath)
+	caCert, err := readCACert()
 	if err != nil {
 		sc.cleanUpCertGen(csrName, csrCreated)
-		log.Debugf("CA cert path is : %v", caCertPath)
-		return nil, nil, fmt.Errorf("failed to read the CA certificate of k8s API server: %v", err)
+		return nil, nil, err
 	}
 	// Verify the certificate chain before returning the certificate (similar to
 	// SPIRE agent calls golang certificate API to verify certificate chain):
@@ -707,4 +717,13 @@ func (sc *SecretController) isWebhookSA(name, namespace, istioNamespace string) 
 		}
 	}
 	return false
+}
+
+func readCACert() ([]byte, error) {
+	caCert, err := ioutil.ReadFile(caCertPath)
+	if err != nil {
+		log.Errorf("failed to read CA cert, cert. path: %v, error: %v", caCertPath, err)
+		return nil, fmt.Errorf("failed to read CA cert, cert. path: %v, error: %v", caCertPath, err)
+	}
+	return caCert, nil
 }
