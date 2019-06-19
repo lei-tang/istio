@@ -74,8 +74,8 @@ const (
 
 	// The path storing the CA certificate of the k8s apiserver
 	// caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
-	// caCertPath = "/Users/leitang/temp/cert-root.pem"
+	// caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
+	caCertPath = "/Users/leitang/temp/cert-root.pem"
 )
 
 var (
@@ -148,13 +148,16 @@ type SecretController struct {
 	monitoring monitoringMetrics
 
 	certClient certclient.CertificatesV1beta1Interface
+
+	// The namespace of the webhook certificates
+	namespace string
 }
 
 // NewSecretController returns a pointer to a newly constructed SecretController instance.
 func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL time.Duration,
 	gracePeriodRatio float32, minGracePeriod time.Duration, dualUse bool,
 	core corev1.CoreV1Interface, certClient certclient.CertificatesV1beta1Interface, forCA bool, pkcs8Key bool, namespaces []string,
-	dnsNames map[string]*DNSNameEntry) (*SecretController, error) {
+	dnsNames map[string]*DNSNameEntry, nameSpace string) (*SecretController, error) {
 
 	if gracePeriodRatio < 0 || gracePeriodRatio > 1 {
 		return nil, fmt.Errorf("grace period ratio %f should be within [0, 1]", gracePeriodRatio)
@@ -178,6 +181,7 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 		dnsNames:         dnsNames,
 		monitoring:       newMonitoringMetrics(),
 		certClient:       certClient,
+		namespace:        nameSpace,
 	}
 
 	for _, ns := range namespaces {
@@ -275,7 +279,7 @@ func (sc *SecretController) istioEnabledObject(obj metav1.Object) bool {
 // Handles the event where a service account is added.
 func (sc *SecretController) saAdded(obj interface{}) {
 	acct := obj.(*v1.ServiceAccount)
-	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace(), "istio-system") {
+	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace(), sc.namespace) {
 		// Only handle Webhook SA
 		// TODO: 1. replace the hardcoded webhook namespace. 2. change Citadel to not handle Webhook SA
 		return
@@ -289,7 +293,7 @@ func (sc *SecretController) saAdded(obj interface{}) {
 // Handles the event where a service account is deleted.
 func (sc *SecretController) saDeleted(obj interface{}) {
 	acct := obj.(*v1.ServiceAccount)
-	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace(), "istio-system") {
+	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace(), sc.namespace) {
 		// Only handle Webhook SA
 		return
 	}
