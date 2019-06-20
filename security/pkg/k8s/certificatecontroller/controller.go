@@ -56,7 +56,9 @@ const (
 	ServiceAccountNameAnnotationKey = "istio.io/service-account.name"
 
 	secretNamePrefix   = "istio."
-	secretResyncPeriod = time.Minute
+	// For debugging, set the resync period to be a shorter period.
+	secretResyncPeriod = 10*time.Second
+	// secretResyncPeriod = time.Minute
 
 	recommendedMinGracePeriodRatio = 0.2
 	recommendedMaxGracePeriodRatio = 0.8
@@ -74,8 +76,8 @@ const (
 
 	// The path storing the CA certificate of the k8s apiserver
 	// caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
-	// caCertPath = "/Users/leitang/temp/cert-root.pem"
+	// caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
+	caCertPath = "/Users/leitang/temp/cert-root.pem"
 )
 
 var (
@@ -279,7 +281,7 @@ func (sc *SecretController) istioEnabledObject(obj metav1.Object) bool {
 // Handles the event where a service account is added.
 func (sc *SecretController) saAdded(obj interface{}) {
 	acct := obj.(*v1.ServiceAccount)
-	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace(), sc.namespace) {
+	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace()) {
 		// Only handle Webhook SA
 		// TODO: 1. replace the hardcoded webhook namespace. 2. change Citadel to not handle Webhook SA
 		return
@@ -293,7 +295,7 @@ func (sc *SecretController) saAdded(obj interface{}) {
 // Handles the event where a service account is deleted.
 func (sc *SecretController) saDeleted(obj interface{}) {
 	acct := obj.(*v1.ServiceAccount)
-	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace(), sc.namespace) {
+	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace()) {
 		// Only handle Webhook SA
 		return
 	}
@@ -440,8 +442,11 @@ func (sc *SecretController) scrtUpdated(oldObj, newObj interface{}) {
 	}
 	namespace := scrt.GetNamespace()
 	name := scrt.GetName()
+	// Only handle webhook secret update events
+	if !sc.isWebhookSecret(name, namespace) {
+		return
+	}
 
-	// TODO: only handle webhook secret update events
 	certBytes := scrt.Data[CertChainID]
 	cert, err := util.ParsePemEncodedCertificate(certBytes)
 	if err != nil {
@@ -710,9 +715,20 @@ func (sc *SecretController) cleanUpCertGen(csrName string, csrCreated bool) (err
 	return nil
 }
 
-func (sc *SecretController) isWebhookSA(name, namespace, istioNamespace string) (bool) {
+// Return whether the input service account name is a Webhook service account
+func (sc *SecretController) isWebhookSA(name, namespace string) (bool) {
 	for _, n := range WebhookServiceAccounts {
-		if n == name && namespace == istioNamespace {
+		if n == name && namespace == sc.namespace {
+			return true
+		}
+	}
+	return false
+}
+
+// Return whether the input secret name is a Webhook secret
+func (sc *SecretController) isWebhookSecret(name, namespace string) (bool) {
+	for _, n := range WebhookServiceAccounts {
+		if GetSecretName(n) == name && namespace == sc.namespace {
 			return true
 		}
 	}

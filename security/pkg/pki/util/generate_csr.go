@@ -32,6 +32,8 @@ import (
 // GenCSR generates a X.509 certificate sign request and private key with the given options.
 func GenCSR(options CertOptions) ([]byte, []byte, error) {
 	// Generates a CSR
+	// TODO: fix the problem of stuck at rsa.GenerateKey(), maybe caused by race condition.
+	// Reproducible at /Users/leitang/go/src/mytests/syntax/rsa/genkey/main.go
 	priv, err := rsa.GenerateKey(rand.Reader, options.RSAKeySize)
 	if err != nil {
 		return nil, nil, fmt.Errorf("RSA key generation failed (%v)", err)
