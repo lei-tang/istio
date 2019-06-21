@@ -76,8 +76,8 @@ const (
 
 	// The path storing the CA certificate of the k8s apiserver
 	// caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	// caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
-	caCertPath = "/Users/leitang/temp/cert-root.pem"
+	 caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
+	//caCertPath = "/Users/leitang/temp/cert-root.pem"
 )
 
 var (
@@ -556,7 +556,7 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 		sc.monitoring.CSRError.Inc()
 		return nil, nil, err
 	}
-	log.Debugf("csrPem: %v", csrPEM)
+	log.Debugf("csrPem: %v", string(csrPEM))
 	log.Debugf("keyPem: %v", keyPEM)
 
 	// 1. Submit a CSR

@@ -2,6 +2,7 @@ package main
 
 import (
 	"istio.io/istio/security/pkg/pki/ca"
+	"istio.io/istio/security/pkg/server/monitoring"
 	"os"
 	"time"
 
@@ -57,6 +58,11 @@ type cliOptions struct {
 	// Whether to generate PKCS#8 private keys.
 	pkcs8Keys bool
 
+	// Monitoring port number
+	monitoringPort int
+	// Enable profiling in monitoring
+	enableProfiling bool
+
 	// The path to the file which indicates the liveness of the server by its existence.
 	// This will be used for k8s liveness probe. If empty, it does nothing.
 	// Currently, probe service is not supported yet.
@@ -66,6 +72,15 @@ type cliOptions struct {
 	logOptions *log.Options
 	// Currently, no topic is registered for ctrlz yet
 	ctrlzOptions *ctrlz.Options
+}
+
+func fatalf(template string, args ...interface{}) {
+	if len(args) > 0 {
+		log.Errorf(template, args...)
+	} else {
+		log.Errorf(template)
+	}
+	os.Exit(-1)
 }
 
 func init() {
@@ -81,6 +96,11 @@ func init() {
 
 	flags.StringVar(&opts.kubeConfigFile, "kube-config", "",
 		"Specifies path to kubeconfig file. This must be specified when not running inside a Kubernetes pod.")
+
+	// Monitoring configuration
+	flags.IntVar(&opts.monitoringPort, "monitoring-port", 15021, "The port number for monitoring Chiron. "+
+			"If unspecified, Chiron will disable monitoring.")
+	flags.BoolVar(&opts.enableProfiling, "enable-profiling", false, "Enabling profiling when monitoring Chiron.")
 
 	// Certificate signing configuration.
 	flags.DurationVar(&opts.workloadCertTTL, "workload-cert-ttl", cmd.DefaultWorkloadCertTTL,
@@ -113,10 +133,6 @@ func main() {
 	if err := rootCmd.Execute(); err != nil {
 		log.Errora(err)
 		os.Exit(1)
-	}
-
-	// TODO: wait on a channel until the controller terminates
-	for true {
 	}
 }
 
@@ -196,5 +212,26 @@ func runCertificateController() {
 	}
 
 	sc.Run(stopCh)
+
+	monitorErrCh := make(chan error)
+	// Start the monitoring server.
+	if opts.monitoringPort > 0 {
+		monitor, mErr := monitoring.NewMonitor(opts.monitoringPort, opts.enableProfiling)
+		if mErr != nil {
+			fatalf("Unable to setup monitoring: %v", mErr)
+		}
+		go monitor.Start(monitorErrCh)
+		log.Info("Citadel monitor has started.")
+		defer monitor.Close()
+	}
+
+	// Blocking until receives error.
+	for {
+		select {
+		case <-monitorErrCh:
+			// TODO: does the controller exit when receiving an error?
+			fatalf("Monitoring server error: %v", err)
+		}
+	}
 }
 
