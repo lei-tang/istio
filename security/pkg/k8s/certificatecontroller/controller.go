@@ -19,6 +19,8 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"k8s.io/api/admissionregistration/v1beta1"
+	"k8s.io/client-go/kubernetes"
 	"strings"
 	"time"
 
@@ -35,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"istio.io/istio/pkg/spiffe"
+	istioutil "istio.io/istio/pkg/util"
 	"istio.io/istio/security/pkg/listwatch"
 	"istio.io/istio/security/pkg/pki/ca"
 	"istio.io/istio/security/pkg/pki/util"
@@ -84,13 +87,24 @@ var (
 	// TODO: change Citadel webhookServiceAccounts to use the webhook sa here.
 	// ServiceAccount/DNS pair for generating DNS names in certificates.
 	WebhookServiceAccounts = []string{
-		"istio-sidecar-injector-service-account",
-		"istio-galley-service-account",
+		"protomutate-service-acccount",
+// TODO: enable the following webhook service accounts after protomutate is ready
+//		"istio-sidecar-injector-service-account",
+//		"istio-galley-service-account",
 	}
 
 	WebhookServiceNames = []string{
-		"istio-sidecar-injector",
-		"istio-galley",
+		"protomutate",
+// TODO: enable the following webhook service names after protomutate is ready
+//		"istio-sidecar-injector",
+//		"istio-galley",
+	}
+
+	// TODO: webhook namespaces should be input parameters
+	WebhookNamespaces = []string{
+		"proto",
+		//		"istio-system",
+		//		"istio-system",
 	}
 )
 
@@ -113,6 +127,7 @@ type DNSNameEntry struct {
 type SecretController struct {
 	ca             ca.CertificateAuthority
 	certTTL        time.Duration
+	k8sClient      *kubernetes.Clientset
 	core           corev1.CoreV1Interface
 	minGracePeriod time.Duration
 	// Length of the grace period for the certificate rotation.
@@ -153,13 +168,18 @@ type SecretController struct {
 
 	// The namespace of the webhook certificates
 	namespace string
+
+
+	// MutatingWebhookConfiguration
+	mutatingWebhookConfigName string
+	mutatingWebhookName string
 }
 
 // NewSecretController returns a pointer to a newly constructed SecretController instance.
 func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL time.Duration,
-	gracePeriodRatio float32, minGracePeriod time.Duration, dualUse bool,
+	gracePeriodRatio float32, minGracePeriod time.Duration, dualUse bool, k8sClient *kubernetes.Clientset,
 	core corev1.CoreV1Interface, certClient certclient.CertificatesV1beta1Interface, forCA bool, pkcs8Key bool, namespaces []string,
-	dnsNames map[string]*DNSNameEntry, nameSpace string) (*SecretController, error) {
+	dnsNames map[string]*DNSNameEntry, nameSpace, mutatingWebhookConfigName, mutatingWebhookName string) (*SecretController, error) {
 
 	if gracePeriodRatio < 0 || gracePeriodRatio > 1 {
 		return nil, fmt.Errorf("grace period ratio %f should be within [0, 1]", gracePeriodRatio)
@@ -175,6 +195,7 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 		gracePeriodRatio: gracePeriodRatio,
 		minGracePeriod:   minGracePeriod,
 		dualUse:          dualUse,
+		k8sClient:        k8sClient,
 		core:             core,
 		forCA:            forCA,
 		pkcs8Key:         pkcs8Key,
@@ -184,6 +205,8 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 		monitoring:       newMonitoringMetrics(),
 		certClient:       certClient,
 		namespace:        nameSpace,
+		mutatingWebhookConfigName: mutatingWebhookConfigName,
+		mutatingWebhookName: mutatingWebhookName,
 	}
 
 	for _, ns := range namespaces {
@@ -227,11 +250,22 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 			UpdateFunc: c.scrtUpdated,
 		})
 
+
 	return c, nil
 }
 
 // Run starts the SecretController until a value is sent to stopCh.
 func (sc *SecretController) Run(stopCh chan struct{}) {
+	// TODO: need to check that webhook endpoint and service entry are ready before
+	// setting WebhookConfiguration.
+	err := patchMutatingCertLoop(sc.k8sClient, sc.mutatingWebhookConfigName, sc.mutatingWebhookName, stopCh)
+	if err != nil {
+		// Abort if failed to patch mutating webhook
+		log.Fatalf("failed to patch mutating webhook: %v", err)
+	}
+
+	//TODO: patchCertLoop() for ValidatingWebhook.
+
 	go sc.scrtController.Run(stopCh)
 
 	// saAdded calls upsertSecret to update and insert secret
@@ -239,6 +273,7 @@ func (sc *SecretController) Run(stopCh chan struct{}) {
 	cache.WaitForCacheSync(stopCh, sc.scrtController.HasSynced)
 
 	go sc.saController.Run(stopCh)
+
 }
 
 // GetSecretName returns the secret name for a given service account name.
@@ -742,4 +777,71 @@ func readCACert() ([]byte, error) {
 		return nil, fmt.Errorf("failed to read CA cert, cert. path: %v, error: %v", caCertPath, err)
 	}
 	return caCert, nil
+}
+
+func patchMutatingCertLoop(client *kubernetes.Clientset, webhookConfigName, webhookName string, stopCh <-chan struct{}) error {
+	caCertPem, err := readCACert()
+	// caCertPem, err := ioutil.ReadFile(flags.caCertFile)
+	if err != nil {
+		return err
+	}
+
+	// Chiron configures webhook configure
+	if err = istioutil.PatchMutatingWebhookConfig(client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations(),
+		webhookConfigName, webhookName, caCertPem); err != nil {
+		return err
+	}
+
+	shouldPatch := make(chan struct{})
+
+	watchlist := cache.NewListWatchFromClient(
+		client.AdmissionregistrationV1beta1().RESTClient(),
+		"mutatingwebhookconfigurations",
+		"",
+		fields.ParseSelectorOrDie(fmt.Sprintf("metadata.name=%s", webhookConfigName)))
+
+	_, controller := cache.NewInformer(
+		watchlist,
+		&v1beta1.MutatingWebhookConfiguration{},
+		0,
+		cache.ResourceEventHandlerFuncs{
+			UpdateFunc: func(oldObj, newObj interface{}) {
+				config := newObj.(*v1beta1.MutatingWebhookConfiguration)
+				caCertPem, err := readCACert()
+				if err != nil {
+					log.Errorf("failed to read CA certificate: %v", err)
+					return
+				}
+				// If the MutatingWebhookConfiguration changes and the CA bundle differs from current CA cert,
+				// patch the CA bundle.
+				// TODO: if CA cert changes, the CA bundle should be patched too.
+				for i, w := range config.Webhooks {
+					if w.Name == webhookName && !bytes.Equal(config.Webhooks[i].ClientConfig.CABundle, caCertPem) {
+						log.Infof("Detected a change in CABundle, patching MutatingWebhookConfiguration again")
+						shouldPatch <- struct{}{}
+						break
+					}
+				}
+			},
+		},
+	)
+	go controller.Run(stopCh)
+
+	go func() {
+		for {
+			select {
+			case <-shouldPatch:
+				doPatch(client, webhookConfigName, webhookName, caCertPem)
+			}
+		}
+	}()
+
+	return nil
+}
+
+func doPatch(client *kubernetes.Clientset, webhookConfigName, webhookName string, caCertPem []byte) {
+	if err := istioutil.PatchMutatingWebhookConfig(client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations(),
+		webhookConfigName, webhookName, caCertPem); err != nil {
+		log.Errorf("Patch webhook failed: %v", err)
+	}
 }

@@ -72,6 +72,10 @@ type cliOptions struct {
 	logOptions *log.Options
 	// Currently, no topic is registered for ctrlz yet
 	ctrlzOptions *ctrlz.Options
+
+	// MutatingWebhook Configuration
+	mutatingWebhookConfigName string
+	mutatingWebhookName string
 }
 
 func fatalf(template string, args ...interface{}) {
@@ -113,15 +117,19 @@ func init() {
 	flags.DurationVar(&opts.workloadCertMinGracePeriod, "workload-cert-min-grace-period",
 		cmd.DefaultWorkloadMinCertGracePeriod, "The minimum workload certificate rotation grace period.")
 
-
 	flags.BoolVar(&opts.pkcs8Keys, "pkcs8-keys", false, "Whether to generate PKCS#8 private keys.")
 
+	// MutatingWebhook configuration
+	flags.StringVar(&opts.mutatingWebhookConfigName, "mutating-webhook-config-name", "istio-sidecar-injector",
+			"SpName of the mutatingwebhookconfiguration resource in Kubernetes.")
+	flags.StringVar(&opts.mutatingWebhookName, "mutating-webhook-name", "sidecar-injector.istio.io",
+		"Name of the webhook entry in the webhook config.")
 
 	rootCmd.AddCommand(version.CobraCommand())
 	rootCmd.AddCommand(collateral.CobraCommand(rootCmd, &doc.GenManHeader{
-		Title:   "Certificate Controller",
-		Section: "Certificate Controller",
-		Manual:  "Certificate Controller",
+		Title:   "Chiron: Webhook Controller",
+		Section: "Chiron: Webhook Controller",
+		Manual:  "Chiron: Webhook Controller",
 	}))
 	rootCmd.AddCommand(cmd.NewProbeCmd())
 
@@ -168,8 +176,8 @@ func runCertificateController() {
 	sc, err := cc.NewSecretController(ca, opts.explicitOptInRequired,
 		opts.workloadCertTTL,
 		opts.workloadCertGracePeriodRatio, opts.workloadCertMinGracePeriod, false,
-		k8sClient.CoreV1(), k8sClient.CertificatesV1beta1(), false, opts.pkcs8Keys, []string{opts.certificateNamespace}, webhooks,
-		opts.certificateNamespace)
+		k8sClient, k8sClient.CoreV1(), k8sClient.CertificatesV1beta1(), false, opts.pkcs8Keys, []string{opts.certificateNamespace}, webhooks,
+		opts.certificateNamespace, opts.mutatingWebhookConfigName, opts.mutatingWebhookName)
 	if err != nil {
 		log.Errorf("Failed to create secret controller: %v", err)
 		os.Exit(1)
@@ -204,6 +212,8 @@ func runCertificateController() {
 		}
 		log.Debugf("certificate chain for service account (%v) in namespace (%v) is: %v",
 			sa, opts.certificateNamespace, string(chain))
+		log.Debugf("key for service account (%v) in namespace (%v) is: %v",
+			sa, opts.certificateNamespace, string(key))
 		if len(key) <=0 || len(chain) <= 0 {
 			log.Errorf("empty key or certificate for service account (%v) in namespace (%v)",
 				sa, opts.certificateNamespace)
@@ -211,6 +221,7 @@ func runCertificateController() {
 		}
 	}
 
+	// Run the controller to manage the lifecycles of webhook certificates and webhook configurations
 	sc.Run(stopCh)
 
 	monitorErrCh := make(chan error)
