@@ -1,0 +1,20 @@
+################################
+# Deploy Vault as a pod in a cluster
+################################
+apiVersion: v1
+kind: Pod
+metadata:
+  name: vault-tls-server
+  namespace:  default
+  labels:
+    app: vault-tls-server
+spec:
+  containers:
+    - name: vault
+      image: gcr.io/endpoints-authz-test1/vault-tls-test:vault-server-tls-istio-ci-cd-4-27-2019
+      imagePullPolicy: "Always"
+      securityContext:
+        capabilities:
+          add:
+            - IPC_LOCK
+  restartPolicy: Never
