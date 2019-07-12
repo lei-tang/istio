@@ -97,6 +97,9 @@ spec:
         - name: chiron
           image: "gcr.io/endpoints-authz-test1/chiron:chiron_develop_6_17_2019"
           imagePullPolicy: Always
+          args:
+            - "--log_output_level"
+            - "debug"
           resources:
             requests:
               cpu: 10m

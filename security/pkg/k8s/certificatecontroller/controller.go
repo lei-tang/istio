@@ -87,7 +87,7 @@ var (
 	// TODO: change Citadel webhookServiceAccounts to use the webhook sa here.
 	// ServiceAccount/DNS pair for generating DNS names in certificates.
 	WebhookServiceAccounts = []string{
-		"protomutate-service-acccount",
+		"istio-protomutate-service-account",
 // TODO: enable the following webhook service accounts after protomutate is ready
 //		"istio-sidecar-injector-service-account",
 //		"istio-galley-service-account",
@@ -102,7 +102,7 @@ var (
 
 	// TODO: webhook namespaces should be input parameters
 	WebhookNamespaces = []string{
-		"proto",
+		"istio-system",
 		//		"istio-system",
 		//		"istio-system",
 	}
@@ -316,6 +316,7 @@ func (sc *SecretController) istioEnabledObject(obj metav1.Object) bool {
 // Handles the event where a service account is added.
 func (sc *SecretController) saAdded(obj interface{}) {
 	acct := obj.(*v1.ServiceAccount)
+	log.Debugf("Enter saAdded(), acct name: %v, acct namespace: %v", acct.GetName(), acct.GetNamespace())
 	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace()) {
 		// Only handle Webhook SA
 		// TODO: 1. replace the hardcoded webhook namespace. 2. change Citadel to not handle Webhook SA
@@ -330,6 +331,7 @@ func (sc *SecretController) saAdded(obj interface{}) {
 // Handles the event where a service account is deleted.
 func (sc *SecretController) saDeleted(obj interface{}) {
 	acct := obj.(*v1.ServiceAccount)
+	log.Debugf("Enter saDeleted(), acct name: %v, acct namespace: %v", acct.GetName(), acct.GetNamespace())
 	if !sc.isWebhookSA(acct.GetName(), acct.GetNamespace()) {
 		// Only handle Webhook SA
 		return
