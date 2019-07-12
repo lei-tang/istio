@@ -188,11 +188,11 @@ func doPatch(client *kubernetes.Clientset, caCertPem []byte) {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&flags.certFile, "tlsCertFile", "/etc/istio/certs/cert-chain.pem",
+	rootCmd.PersistentFlags().StringVar(&flags.certFile, "tlsCertFile", "/etc/certs/cert-chain.pem",
 		"File containing the x509 Certificate for HTTPS.")
-	rootCmd.PersistentFlags().StringVar(&flags.privateKeyFile, "tlsKeyFile", "/etc/istio/certs/key.pem",
+	rootCmd.PersistentFlags().StringVar(&flags.privateKeyFile, "tlsKeyFile", "/etc/certs/key.pem",
 		"File containing the x509 private key matching --tlsCertFile.")
-	rootCmd.PersistentFlags().StringVar(&flags.caCertFile, "caCertFile", "/etc/istio/certs/root-cert.pem",
+	rootCmd.PersistentFlags().StringVar(&flags.caCertFile, "caCertFile", "/etc/certs/root-cert.pem",
 		"File containing the x509 Certificate for HTTPS.")
 	rootCmd.PersistentFlags().IntVar(&flags.port, "port", 443, "Webhook port")
 

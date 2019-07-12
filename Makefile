@@ -362,13 +362,13 @@ galley:
 $(GALLEY_GO_BINS):
 	bin/gobuild.sh $@ ./galley/cmd/$(@F)
 
-SECURITY_GO_BINS:=${ISTIO_OUT}/node_agent ${ISTIO_OUT}/node_agent_k8s ${ISTIO_OUT}/istio_ca ${ISTIO_OUT}/chiron
+SECURITY_GO_BINS:=${ISTIO_OUT}/node_agent ${ISTIO_OUT}/node_agent_k8s ${ISTIO_OUT}/istio_ca ${ISTIO_OUT}/chiron ${ISTIO_OUT}/protomutate
 $(SECURITY_GO_BINS):
 	bin/gobuild.sh $@ ./security/cmd/$(@F)
 
 .PHONY: build
 # Build will rebuild the go binaries.
-build: depend $(PILOT_GO_BINS_SHORT) mixc mixs mixgen node_agent node_agent_k8s istio_ca istioctl galley chiron
+build: depend $(PILOT_GO_BINS_SHORT) mixc mixs mixgen node_agent node_agent_k8s istio_ca istioctl galley chiron protomutate
 
 # The following are convenience aliases for most of the go targets
 # The first block is for aliases that are the same as the actual binary,
@@ -383,6 +383,10 @@ citadel:
 .PHONY: chiron
 chiron:
 	bin/gobuild.sh ${ISTIO_OUT}/chiron ./security/cmd/chiron
+
+.PHONY: protomutate
+protomutate:
+	bin/gobuild.sh ${ISTIO_OUT}/protomutate ./security/cmd/protomutate
 
 .PHONY: node-agent
 node-agent:

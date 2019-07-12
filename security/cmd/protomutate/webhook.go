@@ -86,9 +86,35 @@ type WebhookParameters struct {
 
 // NewWebhook creates a new instance of a mutating webhook for automatic sidecar injection.
 func NewWebhook(p WebhookParameters) (*Webhook, error) {
-	pair, err := tls.LoadX509KeyPair(p.CertFile, p.KeyFile)
-	if err != nil {
-		return nil, err
+	var pair tls.Certificate
+	for {
+		// TODO: protomutate waits for Chiron to provision the webhook certificate through the secret mount.
+		// The secret "istio.istio-protomutate-service-account"
+		var err error
+		certPEMBlock, err := ioutil.ReadFile(p.CertFile)
+		if err != nil {
+			// Try again later
+			time.Sleep(3*time.Second)
+			continue
+		} else {
+			log.Debugf("the webhook certificate file is %v", string(certPEMBlock))
+		}
+		keyPEMBlock, err := ioutil.ReadFile(p.KeyFile)
+		if err != nil {
+			// Try again later
+			time.Sleep(3*time.Second)
+			continue
+		} else {
+			log.Debugf("the webhook certificate key file is %v", string(keyPEMBlock))
+		}
+		pair, err = tls.LoadX509KeyPair(p.CertFile, p.KeyFile)
+		if err != nil {
+			// Try again later
+			time.Sleep(3*time.Second)
+			log.Info("wait for the webhook certificate be provisioned")
+		} else {
+			break
+		}
 	}
 
 	watcher, err := fsnotify.NewWatcher()
