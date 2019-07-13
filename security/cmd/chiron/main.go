@@ -127,9 +127,9 @@ func init() {
 
 	rootCmd.AddCommand(version.CobraCommand())
 	rootCmd.AddCommand(collateral.CobraCommand(rootCmd, &doc.GenManHeader{
-		Title:   "Chiron: Webhook Controller",
-		Section: "Chiron: Webhook Controller",
-		Manual:  "Chiron: Webhook Controller",
+		Title:   "Chiron: Istio Webhook Controller",
+		Section: "Chiron: Istio Webhook Controller",
+		Manual:  "Chiron: Istio Webhook Controller",
 	}))
 	rootCmd.AddCommand(cmd.NewProbeCmd())
 
@@ -232,7 +232,7 @@ func runCertificateController() {
 			fatalf("Unable to setup monitoring: %v", mErr)
 		}
 		go monitor.Start(monitorErrCh)
-		log.Info("Citadel monitor has started.")
+		log.Info("Chiron monitor has started.")
 		defer monitor.Close()
 	}
 

@@ -80,10 +80,16 @@ var (
 			}
 
 			stop := make(chan struct{})
-			if err := patchCertLoop(stop); err != nil {
-				return multierror.Prefix(err, "failed to start patch cert loop")
-			}
 
+			// With Chiron, no need to patch CA bundle in a webhook.
+			// TODO (lei-tang): check that the patchCertLoop logic is in Chiron for
+			// Galley and Sidecar Injector, such that when CA bundle changes,
+			// WebhookConfigurations are patched by Chiron.
+			//if err := patchCertLoop(stop); err != nil {
+			//	return multierror.Prefix(err, "failed to start patch cert loop")
+			//}
+
+			log.Info("run protomutate webhook in a go routine...")
 			go wh.Run(stop)
 			cmd.WaitSignal(stop)
 			return nil

@@ -2,15 +2,15 @@ apiVersion: v1
 kind: Service
 metadata:
   name: protomutate
-  namespace: proto
+  namespace: istio-system
   labels:
-    app: protomutate
+    istio: protomutate
 spec:
   ports:
     - port: 443
       name: https-validation
   selector:
-    app: protomutate
+    istio: protomutate
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -33,7 +33,7 @@ metadata:
     chart: security
     heritage: Tiller
     release: istio
-    istio: chiron
+    istio: protomutate
 spec:
   replicas: 1
   selector:

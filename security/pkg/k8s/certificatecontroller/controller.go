@@ -19,6 +19,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/client-go/kubernetes"
 	"strings"
@@ -78,9 +79,16 @@ const (
 	maxNumCertRead = 20
 
 	// The path storing the CA certificate of the k8s apiserver
-	// caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-	 caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
+	caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+	// caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
 	//caCertPath = "/Users/leitang/temp/cert-root.pem"
+)
+
+type NetStatus int
+
+const (
+	Reachable NetStatus  = iota
+	UnReachable
 )
 
 var (
@@ -256,8 +264,19 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 
 // Run starts the SecretController until a value is sent to stopCh.
 func (sc *SecretController) Run(stopCh chan struct{}) {
+	log.Info("start running SecretController")
 	// TODO: need to check that webhook endpoint and service entry are ready before
 	// setting WebhookConfiguration.
+	// For each webhook, a goroutine should check its TCP status and patch the webhook configuration.
+	for {
+		netStatus := checkTCPStatus("protomutate.istio-system", 443)
+		if netStatus == Reachable {
+			log.Info("protomutate service is reachable")
+			break
+		}
+		log.Debugf("protomutate service is unreachable, check again later ...")
+		time.Sleep(500 * time.Millisecond)
+	}
 	err := patchMutatingCertLoop(sc.k8sClient, sc.mutatingWebhookConfigName, sc.mutatingWebhookName, stopCh)
 	if err != nil {
 		// Abort if failed to patch mutating webhook
@@ -845,5 +864,18 @@ func doPatch(client *kubernetes.Clientset, webhookConfigName, webhookName string
 	if err := istioutil.PatchMutatingWebhookConfig(client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations(),
 		webhookConfigName, webhookName, caCertPem); err != nil {
 		log.Errorf("Patch webhook failed: %v", err)
+	}
+}
+
+func checkTCPStatus(host string, port int) NetStatus {
+	addr := fmt.Sprintf("%s:%d", host, port)
+	conn, err := net.DialTimeout("tcp", addr, 1*time.Second)
+	if err != nil {
+		log.Debugf("DialTimeout() returns err: %v", err)
+		// No connection yet, so no need to conn.Close()
+		return UnReachable
+	} else {
+		defer conn.Close()
+		return Reachable
 	}
 }

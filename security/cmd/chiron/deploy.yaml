@@ -29,6 +29,12 @@ rules:
   - apiGroups: [""]
     resources: ["serviceaccounts", "services"]
     verbs: ["get", "watch", "list"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    verbs: ["*"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations"]
+    verbs: ["get", "list", "watch", "patch"]
   - apiGroups:
       - "certificates.k8s.io"
     resources:
@@ -95,11 +101,15 @@ spec:
       serviceAccountName: istio-chiron-service-account
       containers:
         - name: chiron
-          image: "gcr.io/endpoints-authz-test1/chiron:chiron_develop_6_17_2019"
+          image: "gcr.io/endpoints-authz-test1/chiron:chiron_develop_7_11_2019"
           imagePullPolicy: Always
           args:
             - "--log_output_level"
             - "debug"
+            - "--mutating-webhook-config-name"
+            - "protomutate"
+            - "--mutating-webhook-name"
+            - "protomutate.istio.io"
           resources:
             requests:
               cpu: 10m
