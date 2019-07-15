@@ -277,13 +277,15 @@ func (sc *SecretController) Run(stopCh chan struct{}) {
 		log.Debugf("protomutate service is unreachable, check again later ...")
 		time.Sleep(2 * time.Second)
 	}
+	// TODO: 1. patchCertLoop() for ValidatingWebhook.
+	// 2. When the k8s root certifificate changes, need to regenerate webhook certificates,
+	// and patch CA bundles in WebhookConfigurations.
+	// Need to watch the file content of the k8s root certificate.
 	err := patchMutatingCertLoop(sc.k8sClient, sc.mutatingWebhookConfigName, sc.mutatingWebhookName, stopCh)
 	if err != nil {
 		// Abort if failed to patch mutating webhook
 		log.Fatalf("failed to patch mutating webhook: %v", err)
 	}
-
-	//TODO: patchCertLoop() for ValidatingWebhook.
 
 	go sc.scrtController.Run(stopCh)
 
