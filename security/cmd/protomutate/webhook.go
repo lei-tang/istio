@@ -266,6 +266,8 @@ func (wh *Webhook) inject(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionRespons
 }
 
 func (wh *Webhook) serveInject(w http.ResponseWriter, r *http.Request) {
+	log.Debugf("enter serveInject(), request: %v", r)
+
 	var body []byte
 	if r.Body != nil {
 		if data, err := ioutil.ReadAll(r.Body); err == nil {

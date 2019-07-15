@@ -12,7 +12,7 @@ webhooks:
     caBundle: ""
     service:
       name: protomutate
-      namespace: proto
+      namespace: istio-system
       path: /inject
   failurePolicy: Fail
   name: protomutate.istio.io

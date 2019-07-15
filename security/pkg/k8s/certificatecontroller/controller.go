@@ -275,7 +275,7 @@ func (sc *SecretController) Run(stopCh chan struct{}) {
 			break
 		}
 		log.Debugf("protomutate service is unreachable, check again later ...")
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(2 * time.Second)
 	}
 	err := patchMutatingCertLoop(sc.k8sClient, sc.mutatingWebhookConfigName, sc.mutatingWebhookName, stopCh)
 	if err != nil {
