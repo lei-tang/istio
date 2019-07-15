@@ -4,7 +4,6 @@ metadata:
   name: nginx
   labels:
     app: web
-    istio-injection: enabled
 spec:
   containers:
     - name: front-end

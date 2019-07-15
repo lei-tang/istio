@@ -109,6 +109,9 @@ func NewWebhook(p WebhookParameters) (*Webhook, error) {
 		log.Info("load the webhook certificate")
 	}
 
+	// Create a watcher for the webhook certificate such that when
+	// the webhook certificate changes, the webhook TLS server uses
+	// the updated webhook certificate.
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, err
@@ -136,6 +139,8 @@ func NewWebhook(p WebhookParameters) (*Webhook, error) {
 	h := http.NewServeMux()
 	h.HandleFunc("/inject", wh.serveInject)
 	wh.server.Handler = h
+	// TODO (lei-tang): add a /check interface to test whether the webhook can be reached
+	// by a client using the webhook CA bundle.
 
 	return wh, nil
 }
@@ -211,6 +216,15 @@ func escapeJSONPointerValue(in string) string {
 	return strings.Replace(step, "/", "~1", -1)
 }
 
+
+func createPatch(pod *corev1.Pod, annotations map[string]string) ([]byte, error) {
+	var patch []rfc6902PatchOperation
+
+	patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
+
+	return json.Marshal(patch)
+}
+
 func updateAnnotation(target map[string]string, added map[string]string) (patch []rfc6902PatchOperation) {
 	for key, value := range added {
 		if target == nil {
@@ -250,8 +264,26 @@ func (wh *Webhook) inject(ar *v1beta1.AdmissionReview) *v1beta1.AdmissionRespons
 		return toAdmissionResponse(err)
 	}
 
+	// Deal with potential empty fields, e.g., when the pod is created by a deployment
+	podName := potentialPodName(&pod.ObjectMeta)
+	if pod.ObjectMeta.Namespace == "" {
+		pod.ObjectMeta.Namespace = req.Namespace
+	}
+
+	log.Infof("AdmissionReview for Kind=%v Namespace=%v Name=%v (%v) UID=%v Rfc6902PatchOperation=%v UserInfo=%v",
+		req.Kind, req.Namespace, req.Name, podName, req.UID, req.Operation, req.UserInfo)
+	log.Debugf("Object: %v", string(req.Object.Raw))
+	log.Debugf("OldObject: %v", string(req.OldObject.Raw))
+
 	//TODO: change to a dummy patch, e.g. add an annotation
-	patchBytes := []byte{}
+	annotations := map[string]string{"protomutate": "webhook-has-patched-pod"}
+	patchBytes, err := createPatch(&pod, annotations)
+	if err != nil {
+		log.Infof("AdmissionResponse: err=%v spec=%v\n", err)
+
+		return toAdmissionResponse(err)
+	}
+	//patchBytes := []byte{}
 	log.Infof("AdmissionResponse: patch=%v\n", string(patchBytes))
 
 	reviewResponse := v1beta1.AdmissionResponse{
@@ -314,4 +346,14 @@ func (wh *Webhook) serveInject(w http.ResponseWriter, r *http.Request) {
 		log.Errorf("Could not write response: %v", err)
 		http.Error(w, fmt.Sprintf("could not write response: %v", err), http.StatusInternalServerError)
 	}
+}
+
+func potentialPodName(metadata *metav1.ObjectMeta) string {
+	if metadata.Name != "" {
+		return metadata.Name
+	}
+	if metadata.GenerateName != "" {
+		return metadata.GenerateName + "***** (actual name not yet known)"
+	}
+	return ""
 }
