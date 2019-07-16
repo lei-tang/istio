@@ -20,20 +20,23 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
-	"k8s.io/api/admissionregistration/v1beta1"
-	"k8s.io/client-go/kubernetes"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
-	cert "k8s.io/api/certificates/v1beta1"
-	certclient "k8s.io/client-go/kubernetes/typed/certificates/v1beta1"
+	"k8s.io/api/admissionregistration/v1beta1"
+	"k8s.io/client-go/kubernetes"
 
-	"k8s.io/api/core/v1"
+	"github.com/howeyc/fsnotify"
+	cert "k8s.io/api/certificates/v1beta1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
+	certclient "k8s.io/client-go/kubernetes/typed/certificates/v1beta1"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 
@@ -59,9 +62,9 @@ const (
 	// The key to specify corresponding service account in the annotation of K8s secrets.
 	ServiceAccountNameAnnotationKey = "istio.io/service-account.name"
 
-	secretNamePrefix   = "istio."
+	secretNamePrefix = "istio."
 	// For debugging, set the resync period to be a shorter period.
-	secretResyncPeriod = 10*time.Second
+	secretResyncPeriod = 10 * time.Second
 	// secretResyncPeriod = time.Minute
 
 	recommendedMinGracePeriodRatio = 0.2
@@ -82,12 +85,14 @@ const (
 	caCertPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 	// caCertPath = "/usr/local/google/home/leitang/temp/cert-root.pem"
 	//caCertPath = "/Users/leitang/temp/cert-root.pem"
+
+	watchDebounceDelay = 100 * time.Millisecond
 )
 
 type NetStatus int
 
 const (
-	Reachable NetStatus  = iota
+	Reachable NetStatus = iota
 	UnReachable
 )
 
@@ -96,16 +101,16 @@ var (
 	// ServiceAccount/DNS pair for generating DNS names in certificates.
 	WebhookServiceAccounts = []string{
 		"istio-protomutate-service-account",
-// TODO: enable the following webhook service accounts after protomutate is ready
-//		"istio-sidecar-injector-service-account",
-//		"istio-galley-service-account",
+		// TODO: enable the following webhook service accounts after protomutate is ready
+		//		"istio-sidecar-injector-service-account",
+		//		"istio-galley-service-account",
 	}
 
 	WebhookServiceNames = []string{
 		"protomutate",
-// TODO: enable the following webhook service names after protomutate is ready
-//		"istio-sidecar-injector",
-//		"istio-galley",
+		// TODO: enable the following webhook service names after protomutate is ready
+		//		"istio-sidecar-injector",
+		//		"istio-galley",
 	}
 
 	// TODO: webhook namespaces should be input parameters
@@ -177,10 +182,17 @@ type SecretController struct {
 	// The namespace of the webhook certificates
 	namespace string
 
-
 	// MutatingWebhookConfiguration
 	mutatingWebhookConfigName string
-	mutatingWebhookName string
+	mutatingWebhookName       string
+
+	// Watcher for the CA certificate
+	CaCertWatcher *fsnotify.Watcher
+
+	// Current CA certificate
+	curCACert []byte
+
+	mutex sync.RWMutex
 }
 
 // NewSecretController returns a pointer to a newly constructed SecretController instance.
@@ -198,24 +210,31 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 	}
 
 	c := &SecretController{
-		ca:               ca,
-		certTTL:          certTTL,
-		gracePeriodRatio: gracePeriodRatio,
-		minGracePeriod:   minGracePeriod,
-		dualUse:          dualUse,
-		k8sClient:        k8sClient,
-		core:             core,
-		forCA:            forCA,
-		pkcs8Key:         pkcs8Key,
-		explicitOptIn:    requireOptIn,
-		namespaces:       make(map[string]struct{}),
-		dnsNames:         dnsNames,
-		monitoring:       newMonitoringMetrics(),
-		certClient:       certClient,
-		namespace:        nameSpace,
+		ca:                        ca,
+		certTTL:                   certTTL,
+		gracePeriodRatio:          gracePeriodRatio,
+		minGracePeriod:            minGracePeriod,
+		dualUse:                   dualUse,
+		k8sClient:                 k8sClient,
+		core:                      core,
+		forCA:                     forCA,
+		pkcs8Key:                  pkcs8Key,
+		explicitOptIn:             requireOptIn,
+		namespaces:                make(map[string]struct{}),
+		dnsNames:                  dnsNames,
+		monitoring:                newMonitoringMetrics(),
+		certClient:                certClient,
+		namespace:                 nameSpace,
 		mutatingWebhookConfigName: mutatingWebhookConfigName,
-		mutatingWebhookName: mutatingWebhookName,
+		mutatingWebhookName:       mutatingWebhookName,
 	}
+
+	caCert, err := readCACert()
+	if err != nil {
+		log.Errorf("failed to read CA certificate: %v", err)
+		return nil, err
+	}
+	c.setCurCACert(caCert)
 
 	for _, ns := range namespaces {
 		c.namespaces[ns] = struct{}{}
@@ -258,6 +277,22 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 			UpdateFunc: c.scrtUpdated,
 		})
 
+	// Create a watcher for the CA certificate such that when
+	// the CA certificate changes, the webhook certificates are regenerated and
+	// the CA bundle in webhook configurations are updated.
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
+	}
+	// watch the parent directory of the target files so we can catch
+	// symlink updates of k8s ConfigMaps volumes.
+	for _, file := range []string{caCertPath} {
+		watchDir, _ := filepath.Split(file)
+		if err := watcher.Watch(watchDir); err != nil {
+			return nil, fmt.Errorf("could not watch %v: %v", file, err)
+		}
+	}
+	c.CaCertWatcher = watcher
 
 	return c, nil
 }
@@ -265,6 +300,7 @@ func NewSecretController(ca ca.CertificateAuthority, requireOptIn bool, certTTL 
 // Run starts the SecretController until a value is sent to stopCh.
 func (sc *SecretController) Run(stopCh chan struct{}) {
 	log.Info("start running SecretController")
+
 	// TODO: need to check that webhook endpoint and service entry are ready before
 	// setting WebhookConfiguration.
 	// For each webhook, a goroutine should check its TCP status and patch the webhook configuration.
@@ -279,9 +315,14 @@ func (sc *SecretController) Run(stopCh chan struct{}) {
 	}
 	// TODO: 1. patchCertLoop() for ValidatingWebhook.
 	// 2. When the k8s root certifificate changes, need to regenerate webhook certificates,
-	// and patch CA bundles in WebhookConfigurations.
-	// Need to watch the file content of the k8s root certificate.
-	err := patchMutatingCertLoop(sc.k8sClient, sc.mutatingWebhookConfigName, sc.mutatingWebhookName, stopCh)
+	// and patch CA bundles in WebhookConfigurations. During transition to
+	// new certificate, the initial requests from API server may fail due to the inconsistent
+	// CA bundles of WebhookConfigurations on API server and Webhook TLS server. But they
+	// will eventually be consistent. Since CA certificate rotation is a rare event
+	// (CA certificate rotates once per years), such request losses should be acceptable.
+	// Need to watch the file content of the k8s root certificate, similar to protomutate
+	// watching and updating its webhook certificate.
+	err := sc.patchMutatingCertLoop(sc.k8sClient, sc.mutatingWebhookConfigName, sc.mutatingWebhookName, stopCh)
 	if err != nil {
 		// Abort if failed to patch mutating webhook
 		log.Fatalf("failed to patch mutating webhook: %v", err)
@@ -295,6 +336,8 @@ func (sc *SecretController) Run(stopCh chan struct{}) {
 
 	go sc.saController.Run(stopCh)
 
+	// Watch the CA certificate updates
+	go sc.watchCACert(stopCh)
 }
 
 // GetSecretName returns the secret name for a given service account name.
@@ -378,18 +421,14 @@ func (sc *SecretController) upsertSecret(saName, saNamespace string) {
 	//chain, key, err := sc.generateKeyAndCert(saName, saNamespace)
 	chain, key, err := sc.GenKeyCertK8sCA(saName, saNamespace)
 	if err != nil {
-		log.Errorf("Failed to generate key and certificate for service account %q in namespace %q (error %v)",
+		log.Errorf("failed to generate key and certificate for service account %q in namespace %q (error %v)",
 			saName, saNamespace, err)
-		return
-	}
-	rootCert, err := readCACert()
-	if err != nil {
 		return
 	}
 	secret.Data = map[string][]byte{
 		CertChainID:  chain,
 		PrivateKeyID: key,
-		RootCertID:   rootCert,
+		RootCertID:   sc.getCurCACert(),
 	}
 
 	// We retry several times when create secret to mitigate transient network failures.
@@ -527,16 +566,12 @@ func (sc *SecretController) scrtUpdated(oldObj, newObj interface{}) {
 			certLifeTime, sc.gracePeriodRatio, gracePeriod, sc.minGracePeriod)
 		gracePeriod = sc.minGracePeriod
 	}
-	rootCertificate, err := readCACert()
-	if err != nil {
-		return
-	}
 
 	// Refresh the secret if 1) the certificate contained in the secret is about
 	// to expire, or 2) the root certificate in the secret is different than the
 	// one held by the ca (this may happen when the CA is restarted and
 	// a new self-signed CA cert is generated).
-	if certLifeTimeLeft < gracePeriod || !bytes.Equal(rootCertificate, scrt.Data[RootCertID]) {
+	if certLifeTimeLeft < gracePeriod || !bytes.Equal(sc.getCurCACert(), scrt.Data[RootCertID]) {
 		log.Infof("Refreshing secret %s/%s, either the leaf certificate is about to expire "+
 			"or the root certificate is outdated", namespace, name)
 
@@ -559,12 +594,7 @@ func (sc *SecretController) refreshSecret(scrt *v1.Secret) error {
 
 	scrt.Data[CertChainID] = chain
 	scrt.Data[PrivateKeyID] = key
-	// TODO: change to get k8s CA root certificate
-	caCert, err := readCACert()
-	if err != nil {
-		return err
-	}
-	scrt.Data[RootCertID] = caCert
+	scrt.Data[RootCertID] = sc.getCurCACert()
 
 	_, err = sc.core.Secrets(namespace).Update(scrt)
 	return err
@@ -630,7 +660,7 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 		Spec: cert.CertificateSigningRequestSpec{
 			Request: csrPEM,
 			// TODO: determine the groups
-			Groups:  []string{"system:authenticated"},
+			Groups: []string{"system:authenticated"},
 			Usages: []cert.KeyUsage{
 				cert.UsageDigitalSignature,
 				cert.UsageKeyEncipherment,
@@ -719,12 +749,8 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 	// it can read the ca cert from /var/run/secrets/kubernetes.io/serviceaccount/ca.crt.
 	// The ca.crt is also in the default secret.
 
-	// Read the CA certificate of the k8s apiserver
-	caCert, err := readCACert()
-	if err != nil {
-		sc.cleanUpCertGen(csrName, csrCreated)
-		return nil, nil, err
-	}
+	caCert := sc.getCurCACert()
+
 	// Verify the certificate chain before returning the certificate (similar to
 	// SPIRE agent calls golang certificate API to verify certificate chain):
 	// - the verification will handle the case that the root certificate changes.
@@ -744,7 +770,7 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 		return nil, nil, fmt.Errorf("failed to parse the certificate: %v", err)
 	}
 	_, err = certParsed.Verify(x509.VerifyOptions{
-		Roots:         roots,
+		Roots: roots,
 	})
 	if err != nil {
 		log.Errorf("failed to verify the certificate chain: %v", err)
@@ -760,7 +786,7 @@ func (sc *SecretController) GenKeyCertK8sCA(saName string, saNamespace string) (
 	return certChain, keyPEM, nil
 }
 
-func (sc *SecretController) cleanUpCertGen(csrName string, csrCreated bool) (error) {
+func (sc *SecretController) cleanUpCertGen(csrName string, csrCreated bool) error {
 	if csrCreated {
 		// Delete CSR
 		log.Debugf("delete CSR: %v", csrName)
@@ -774,7 +800,7 @@ func (sc *SecretController) cleanUpCertGen(csrName string, csrCreated bool) (err
 }
 
 // Return whether the input service account name is a Webhook service account
-func (sc *SecretController) isWebhookSA(name, namespace string) (bool) {
+func (sc *SecretController) isWebhookSA(name, namespace string) bool {
 	for _, n := range WebhookServiceAccounts {
 		if n == name && namespace == sc.namespace {
 			return true
@@ -784,7 +810,7 @@ func (sc *SecretController) isWebhookSA(name, namespace string) (bool) {
 }
 
 // Return whether the input secret name is a Webhook secret
-func (sc *SecretController) isWebhookSecret(name, namespace string) (bool) {
+func (sc *SecretController) isWebhookSecret(name, namespace string) bool {
 	for _, n := range WebhookServiceAccounts {
 		if GetSecretName(n) == name && namespace == sc.namespace {
 			return true
@@ -793,25 +819,58 @@ func (sc *SecretController) isWebhookSecret(name, namespace string) (bool) {
 	return false
 }
 
-func readCACert() ([]byte, error) {
-	caCert, err := ioutil.ReadFile(caCertPath)
-	if err != nil {
-		log.Errorf("failed to read CA cert, cert. path: %v, error: %v", caCertPath, err)
-		return nil, fmt.Errorf("failed to read CA cert, cert. path: %v, error: %v", caCertPath, err)
+func (sc *SecretController) watchCACert(stopCh chan struct{}) {
+	var timerC <-chan time.Time
+	for {
+		select {
+		case <-timerC:
+			// Update webhook certificates and WebhookConfigurations
+			timerC = nil
+
+			caCert, err := readCACert()
+			if err != nil {
+				log.Errorf("failed to read CA certificate: %v", err)
+				break
+			}
+			if !bytes.Equal(caCert, sc.getCurCACert()) {
+				sc.setCurCACert(caCert)
+				// Update the webhook certificate
+				for i, name := range WebhookServiceAccounts {
+					sc.upsertSecret(name, WebhookNamespaces[i])
+				}
+				// Patch the WebhookConfiguration
+				doPatch(sc.k8sClient, sc.mutatingWebhookConfigName, sc.mutatingWebhookName, sc.getCurCACert())
+			}
+		case event := <-sc.CaCertWatcher.Event:
+			// use a timer to debounce configuration updates
+			if (event.IsModify() || event.IsCreate()) && timerC == nil {
+				timerC = time.After(watchDebounceDelay)
+			}
+		case err := <-sc.CaCertWatcher.Error:
+			log.Errorf("CA certificate watcher error: %v", err)
+		case <-stopCh:
+			return
+		}
 	}
-	return caCert, nil
 }
 
-func patchMutatingCertLoop(client *kubernetes.Clientset, webhookConfigName, webhookName string, stopCh <-chan struct{}) error {
-	caCertPem, err := readCACert()
-	// caCertPem, err := ioutil.ReadFile(flags.caCertFile)
-	if err != nil {
-		return err
-	}
+func (sc *SecretController) getCurCACert() []byte {
+	sc.mutex.Lock()
+	copy := append([]byte(nil), sc.curCACert...)
+	sc.mutex.Unlock()
+	return copy
+}
 
+func (sc *SecretController) setCurCACert(cert []byte) {
+	sc.mutex.Lock()
+	sc.curCACert = append([]byte(nil), cert...)
+	sc.mutex.Unlock()
+}
+
+func (sc *SecretController) patchMutatingCertLoop(client *kubernetes.Clientset, webhookConfigName, webhookName string, stopCh <-chan struct{}) error {
 	// Chiron configures webhook configure
-	if err = istioutil.PatchMutatingWebhookConfig(client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations(),
-		webhookConfigName, webhookName, caCertPem); err != nil {
+	if err := istioutil.PatchMutatingWebhookConfig(client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations(),
+		webhookConfigName, webhookName, sc.getCurCACert()); err != nil {
 		return err
 	}
 
@@ -830,16 +889,11 @@ func patchMutatingCertLoop(client *kubernetes.Clientset, webhookConfigName, webh
 		cache.ResourceEventHandlerFuncs{
 			UpdateFunc: func(oldObj, newObj interface{}) {
 				config := newObj.(*v1beta1.MutatingWebhookConfiguration)
-				caCertPem, err := readCACert()
-				if err != nil {
-					log.Errorf("failed to read CA certificate: %v", err)
-					return
-				}
 				// If the MutatingWebhookConfiguration changes and the CA bundle differs from current CA cert,
 				// patch the CA bundle.
 				// TODO: if CA cert changes, the CA bundle should be patched too.
 				for i, w := range config.Webhooks {
-					if w.Name == webhookName && !bytes.Equal(config.Webhooks[i].ClientConfig.CABundle, caCertPem) {
+					if w.Name == webhookName && !bytes.Equal(config.Webhooks[i].ClientConfig.CABundle, sc.getCurCACert()) {
 						log.Infof("Detected a change in CABundle, patching MutatingWebhookConfiguration again")
 						shouldPatch <- struct{}{}
 						break
@@ -854,12 +908,21 @@ func patchMutatingCertLoop(client *kubernetes.Clientset, webhookConfigName, webh
 		for {
 			select {
 			case <-shouldPatch:
-				doPatch(client, webhookConfigName, webhookName, caCertPem)
+				doPatch(client, webhookConfigName, webhookName, sc.getCurCACert())
 			}
 		}
 	}()
 
 	return nil
+}
+
+func readCACert() ([]byte, error) {
+	caCert, err := ioutil.ReadFile(caCertPath)
+	if err != nil {
+		log.Errorf("failed to read CA cert, cert. path: %v, error: %v", caCertPath, err)
+		return nil, fmt.Errorf("failed to read CA cert, cert. path: %v, error: %v", caCertPath, err)
+	}
+	return caCert, nil
 }
 
 func doPatch(client *kubernetes.Clientset, webhookConfigName, webhookName string, caCertPem []byte) {

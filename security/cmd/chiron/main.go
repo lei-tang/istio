@@ -1,10 +1,11 @@
 package main
 
 import (
-	"istio.io/istio/security/pkg/pki/ca"
-	"istio.io/istio/security/pkg/server/monitoring"
 	"os"
 	"time"
+
+	"istio.io/istio/security/pkg/pki/ca"
+	"istio.io/istio/security/pkg/server/monitoring"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
@@ -75,7 +76,7 @@ type cliOptions struct {
 
 	// MutatingWebhook Configuration
 	mutatingWebhookConfigName string
-	mutatingWebhookName string
+	mutatingWebhookName       string
 }
 
 func fatalf(template string, args ...interface{}) {
@@ -103,7 +104,7 @@ func init() {
 
 	// Monitoring configuration
 	flags.IntVar(&opts.monitoringPort, "monitoring-port", 15021, "The port number for monitoring Chiron. "+
-			"If unspecified, Chiron will disable monitoring.")
+		"If unspecified, Chiron will disable monitoring.")
 	flags.BoolVar(&opts.enableProfiling, "enable-profiling", false, "Enabling profiling when monitoring Chiron.")
 
 	// Certificate signing configuration.
@@ -121,7 +122,7 @@ func init() {
 
 	// MutatingWebhook configuration
 	flags.StringVar(&opts.mutatingWebhookConfigName, "mutating-webhook-config-name", "istio-sidecar-injector",
-			"SpName of the mutatingwebhookconfiguration resource in Kubernetes.")
+		"SpName of the mutatingwebhookconfiguration resource in Kubernetes.")
 	flags.StringVar(&opts.mutatingWebhookName, "mutating-webhook-name", "sidecar-injector.istio.io",
 		"Name of the webhook entry in the webhook config.")
 
@@ -164,7 +165,6 @@ func runCertificateController() {
 		os.Exit(1)
 	}
 	log.Debugf("k8sClient: %v", k8sClient)
-
 
 	log.Infof("Creating Kubernetes controller to write issued keys and certs into secret ...")
 	stopCh := make(chan struct{})
@@ -214,7 +214,7 @@ func runCertificateController() {
 			sa, opts.certificateNamespace, string(chain))
 		log.Debugf("key for service account (%v) in namespace (%v) is: %v",
 			sa, opts.certificateNamespace, string(key))
-		if len(key) <=0 || len(chain) <= 0 {
+		if len(key) <= 0 || len(chain) <= 0 {
 			log.Errorf("empty key or certificate for service account (%v) in namespace (%v)",
 				sa, opts.certificateNamespace)
 			os.Exit(1)
@@ -223,6 +223,7 @@ func runCertificateController() {
 
 	// Run the controller to manage the lifecycles of webhook certificates and webhook configurations
 	sc.Run(stopCh)
+	defer sc.CaCertWatcher.Close()
 
 	monitorErrCh := make(chan error)
 	// Start the monitoring server.
@@ -245,4 +246,3 @@ func runCertificateController() {
 		}
 	}
 }
-
