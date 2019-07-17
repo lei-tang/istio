@@ -833,12 +833,15 @@ func (sc *SecretController) watchCACert(stopCh chan struct{}) {
 				break
 			}
 			if !bytes.Equal(caCert, sc.getCurCACert()) {
+				log.Debug("CA cert changed, update webhook certs and webhook configs")
 				sc.setCurCACert(caCert)
 				// Update the webhook certificate
 				for i, name := range WebhookServiceAccounts {
 					sc.upsertSecret(name, WebhookNamespaces[i])
 				}
 				// Patch the WebhookConfiguration
+				// TODO (lei-tang): 1. put all names of mutating webhooks in an array, use for loop to do patching.
+				// 2. put all names of validating webhooks in an array, use for loop to do patching.
 				doPatch(sc.k8sClient, sc.mutatingWebhookConfigName, sc.mutatingWebhookName, sc.getCurCACert())
 			}
 		case event := <-sc.CaCertWatcher.Event:
