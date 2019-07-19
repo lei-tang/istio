@@ -86,22 +86,24 @@ var (
 
 	// WebhookServiceNames is service names of the webhooks.
 	WebhookServiceNames = []string{
-		"istio-sidecar-injector",
-		"istio-galley",
+		"protomutate",
+		// "istio-sidecar-injector",
+		// "istio-galley",
 	}
 
 	// WebhookSecretNames is secret names of the webhooks. Each item corresponds to an item
 	//at the same index in WebhookServiceNames.
 	WebhookSecretNames = []string{
-		"istio.istio-sidecar-injector-service-account",
-		"istio.istio-galley-service-account",
+		 "istio.istio-protomutate-service-account",
+		// "istio.istio-sidecar-injector-service-account",
+		// "istio.istio-galley-service-account",
 	}
 
 	// WebhookServicePorts is service ports of the webhooks. Each item corresponds to an item
 	// at the same index in WebhookServiceNames.
 	WebhookServicePorts = []int{
 		443,
-		443,
+		//443,
 	}
 )
 
