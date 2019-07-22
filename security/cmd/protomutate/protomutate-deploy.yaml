@@ -63,11 +63,11 @@ spec:
             requests:
               cpu: 10m
           volumeMounts:
-          - mountPath: /etc/certs
-            name: certs
+          - mountPath: /etc/webhookcerts
+            name: webhookcerts
             readOnly: true
       volumes:
-        - name: certs
+        - name: webhookcerts
           secret:
             defaultMode: 420
-            secretName: istio.istio-protomutate-service-account
+            secretName: istio.webhook.istio-protomutate-service-account

@@ -129,10 +129,10 @@ func NewWebhook(p WebhookParameters) (*Webhook, error) {
 		server: &http.Server{
 			Addr: fmt.Sprintf(":%v", p.Port),
 		},
-		watcher:                watcher,
-		certFile:               p.CertFile,
-		keyFile:                p.KeyFile,
-		cert:                   &pair,
+		watcher:  watcher,
+		certFile: p.CertFile,
+		keyFile:  p.KeyFile,
+		cert:     &pair,
 	}
 	// mtls disabled because apiserver webhook cert usage is still TBD.
 	wh.server.TLSConfig = &tls.Config{GetCertificate: wh.getCert}
@@ -215,7 +215,6 @@ func escapeJSONPointerValue(in string) string {
 	step := strings.Replace(in, "~", "~0", -1)
 	return strings.Replace(step, "/", "~1", -1)
 }
-
 
 func createPatch(pod *corev1.Pod, annotations map[string]string) ([]byte, error) {
 	var patch []rfc6902PatchOperation

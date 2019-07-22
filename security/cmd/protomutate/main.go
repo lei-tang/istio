@@ -18,18 +18,19 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/hashicorp/go-multierror"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+
+	multierror "github.com/hashicorp/go-multierror"
 	"github.com/howeyc/fsnotify"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
-	"io/ioutil"
 	"k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/tools/cache"
-	"os"
-	"path/filepath"
 
 	"istio.io/istio/pkg/cmd"
 	"istio.io/istio/pkg/kube"
@@ -44,14 +45,14 @@ var (
 	flags = struct {
 		loggingOptions *log.Options
 
-		certFile            string
-		privateKeyFile      string
-		caCertFile          string
-		port                int
-		probeOptions        probe.Options
-		kubeconfigFile      string
-		webhookConfigName   string
-		webhookName         string
+		certFile          string
+		privateKeyFile    string
+		caCertFile        string
+		port              int
+		probeOptions      probe.Options
+		kubeconfigFile    string
+		webhookConfigName string
+		webhookName       string
 	}{
 		loggingOptions: log.DefaultOptions(),
 	}
@@ -70,9 +71,9 @@ var (
 			log.Infof("version %s", version.Info.String())
 
 			parameters := WebhookParameters{
-				CertFile:            flags.certFile,
-				KeyFile:             flags.privateKeyFile,
-				Port:                flags.port,
+				CertFile: flags.certFile,
+				KeyFile:  flags.privateKeyFile,
+				Port:     flags.port,
 			}
 			wh, err := NewWebhook(parameters)
 			if err != nil {
@@ -194,11 +195,11 @@ func doPatch(client *kubernetes.Clientset, caCertPem []byte) {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&flags.certFile, "tlsCertFile", "/etc/certs/cert-chain.pem",
+	rootCmd.PersistentFlags().StringVar(&flags.certFile, "tlsCertFile", "/etc/webhookcerts/cert-chain.pem",
 		"File containing the x509 Certificate for HTTPS.")
-	rootCmd.PersistentFlags().StringVar(&flags.privateKeyFile, "tlsKeyFile", "/etc/certs/key.pem",
+	rootCmd.PersistentFlags().StringVar(&flags.privateKeyFile, "tlsKeyFile", "/etc/webhookcerts/key.pem",
 		"File containing the x509 private key matching --tlsCertFile.")
-	rootCmd.PersistentFlags().StringVar(&flags.caCertFile, "caCertFile", "/etc/certs/root-cert.pem",
+	rootCmd.PersistentFlags().StringVar(&flags.caCertFile, "caCertFile", "/etc/webhookcerts/root-cert.pem",
 		"File containing the x509 Certificate for HTTPS.")
 	rootCmd.PersistentFlags().IntVar(&flags.port, "port", 443, "Webhook port")
 
