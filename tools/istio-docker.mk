@@ -22,7 +22,7 @@
 docker: build test-bins docker.all
 
 DOCKER_TARGETS:=docker.pilot docker.proxy_debug docker.proxytproxy docker.proxyv2 docker.app docker.test_policybackend \
-	docker.proxy_init docker.mixer docker.mixer_codegen docker.citadel docker.galley docker.sidecar_injector docker.kubectl docker.node-agent-k8s docker.chiron docker.protomutate
+	docker.proxy_init docker.mixer docker.mixer_codegen docker.citadel docker.galley docker.sidecar_injector docker.kubectl docker.node-agent-k8s docker.chiron docker.protomutate docker.protovalidate
 
 $(ISTIO_DOCKER) $(ISTIO_DOCKER_TAR):
 	mkdir -p $@
@@ -48,7 +48,7 @@ $(ISTIO_DOCKER)/node_agent.crt $(ISTIO_DOCKER)/node_agent.key: ${GEN_CERT} $(IST
 # 	cp $(ISTIO_OUT)/$FILE $(ISTIO_DOCKER)/($FILE)
 DOCKER_FILES_FROM_ISTIO_OUT:=pkg-test-echo-cmd-client pkg-test-echo-cmd-server \
                              pilot-discovery pilot-agent sidecar-injector mixs mixgen \
-                             istio_ca node_agent node_agent_k8s galley chiron protomutate
+                             istio_ca node_agent node_agent_k8s galley chiron protomutate protovalidate
 $(foreach FILE,$(DOCKER_FILES_FROM_ISTIO_OUT), \
         $(eval $(ISTIO_DOCKER)/$(FILE): $(ISTIO_OUT)/$(FILE) | $(ISTIO_DOCKER); cp $(ISTIO_OUT)/$(FILE) $(ISTIO_DOCKER)/$(FILE)))
 
@@ -210,6 +210,12 @@ docker.chiron: $(ISTIO_DOCKER)/ca-certificates.tgz
 docker.protomutate: security/docker/Dockerfile.protomutate
 docker.protomutate: $(ISTIO_DOCKER)/protomutate
 docker.protomutate: $(ISTIO_DOCKER)/ca-certificates.tgz
+	$(DOCKER_RULE)
+
+
+docker.protovalidate: security/docker/Dockerfile.protovalidate
+docker.protovalidate: $(ISTIO_DOCKER)/protovalidate
+docker.protovalidate: $(ISTIO_DOCKER)/ca-certificates.tgz
 	$(DOCKER_RULE)
 
 docker.node-agent: security/docker/Dockerfile.node-agent

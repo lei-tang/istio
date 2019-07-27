@@ -15,6 +15,7 @@
 package chiron
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -248,9 +249,7 @@ func isTCPReachable(host string, port int) bool {
 }
 
 // Rebuild the desired mutatingwebhookconfiguration from the specified CA
-// and webhook config files. This also ensures the OwnerReferences is set
-// so that the cluster-scoped mutatingwebhookconfiguration is properly
-// cleaned up when the mutating webhook is deleted.
+// and webhook config files.
 func rebuildMutatingWebhookConfigHelper(
 	caCert []byte, webhookConfigFile, webhookConfigName string,
 ) (*v1beta1.MutatingWebhookConfiguration, error) {
@@ -263,6 +262,45 @@ func rebuildMutatingWebhookConfigHelper(
 	var webhookConfig v1beta1.MutatingWebhookConfiguration
 	if err := yaml.Unmarshal(webhookConfigData, &webhookConfig); err != nil {
 		return nil, fmt.Errorf("could not decode mutatingwebhookconfiguration from %v: %v",
+			webhookConfigFile, err)
+	}
+
+	// fill in missing defaults to minimize desired vs. actual diffs later.
+	for i := 0; i < len(webhookConfig.Webhooks); i++ {
+		if webhookConfig.Webhooks[i].FailurePolicy == nil {
+			failurePolicy := v1beta1.Fail
+			webhookConfig.Webhooks[i].FailurePolicy = &failurePolicy
+		}
+		if webhookConfig.Webhooks[i].NamespaceSelector == nil {
+			webhookConfig.Webhooks[i].NamespaceSelector = &metav1.LabelSelector{}
+		}
+	}
+
+	// the webhook name is fixed at startup time
+	webhookConfig.Name = webhookConfigName
+
+	// patch the ca-cert into the user provided configuration
+	for i := range webhookConfig.Webhooks {
+		webhookConfig.Webhooks[i].ClientConfig.CABundle = caCert
+	}
+
+	return &webhookConfig, nil
+}
+
+// Rebuild the desired validatingwebhookconfiguration from the specified CA
+// and webhook config files.
+func rebuildValidatingWebhookConfigHelper(
+	caCert []byte, webhookConfigFile, webhookConfigName string,
+) (*v1beta1.ValidatingWebhookConfiguration, error) {
+	log.Debugf("*********** enter rebuildValidatingWebhookConfigHelper()")
+	// load and validate configuration
+	webhookConfigData, err := ioutil.ReadFile(webhookConfigFile)
+	if err != nil {
+		return nil, err
+	}
+	var webhookConfig v1beta1.ValidatingWebhookConfiguration
+	if err := yaml.Unmarshal(webhookConfigData, &webhookConfig); err != nil {
+		return nil, fmt.Errorf("could not decode validatingwebhookconfiguration from %v: %v",
 			webhookConfigFile, err)
 	}
 
@@ -333,4 +371,127 @@ func createOrUpdateMutatingWebhookConfigHelper(
 	}
 	log.Debugf("*********** return false, nil error")
 	return false, nil
+}
+
+// Create the specified validatingwebhookconfiguration resource or, if the resource
+// already exists, update it's contents with the desired state.
+func createOrUpdateValidatingWebhookConfigHelper(
+	client admissionreg.ValidatingWebhookConfigurationInterface,
+	webhookConfig *v1beta1.ValidatingWebhookConfiguration,
+) (bool, error) {
+	log.Debugf("*********** enter createOrUpdateValidatingWebhookConfigHelper()")
+
+	current, err := client.Get(webhookConfig.Name, metav1.GetOptions{})
+	if err != nil {
+		log.Debugf("*********** get webhookConfig %v returns an err: %v", webhookConfig.Name, err)
+		// If the validatingwebhookconfiguration does not exist yet, create the config.
+		if kerrors.IsNotFound(err) {
+			log.Debugf("*********** get webhookConfig %v err is NotFound", webhookConfig.Name)
+			// Create the validatingwebhookconfiguration
+			if _, createErr := client.Create(webhookConfig); createErr != nil {
+				return false, createErr
+			}
+			return true, nil
+		}
+		log.Debugf("*********** get webhookConfig %v err is NOT NotFound", webhookConfig.Name)
+		// There is an error when getting the webhookconfiguration and the error is
+		// not that the webhookconfiguration does not exist. In this case, simply
+		// return and skip the update.
+		return false, err
+	}
+	// Otherwise, when getting the webhookconfiguration returns nil, update the configuration
+	// only if the webhooks in the current is different from those configured. Only copy the relevant fields
+	// that we want reconciled and ignore everything else, e.g. labels, selectors.
+	updated := current.DeepCopyObject().(*v1beta1.ValidatingWebhookConfiguration)
+	log.Debugf("*********** updated.Webhooks is %v", updated.Webhooks)
+	updated.Webhooks = webhookConfig.Webhooks
+	log.Debugf("*********** after assignment, updated.Webhooks is %v", updated.Webhooks)
+
+	if !reflect.DeepEqual(updated, current) {
+		log.Debugf("*********** reflect.DeepEqual(updated, current) returns false")
+		// Update validatingwebhookconfiguration to based on current and the webhook configured.
+		_, err := client.Update(updated)
+		if err != nil {
+			log.Errorf("update webhookconfiguration returns err: %v", err)
+		}
+		return true, err
+	}
+	log.Debugf("*********** return false, nil error")
+	return false, nil
+}
+
+// Update the mutatingwebhookconfiguration
+func updateMutatingWebhookConfig(wc *WebhookController) {
+	certChanged, err := reloadCaCert(wc)
+	if err == nil && certChanged {
+		updateCertAndWebhookConfig(wc)
+		return
+	}
+
+	// Rebuild the webhook configuration and reconcile with the
+	// existing mutatingwebhookconfiguration.
+	if err := wc.rebuildMutatingWebhookConfig(); err == nil {
+		updateErr := wc.createOrUpdateMutatingWebhookConfig()
+		if updateErr != nil {
+			log.Errorf("error when updating mutatingwebhookconfiguration: %v", updateErr)
+		}
+	}
+}
+
+// Update the validatingwebhookconfiguration
+func updateValidatingWebhookConfig(wc *WebhookController) {
+	certChanged, err := reloadCaCert(wc)
+	if err == nil && certChanged {
+		updateCertAndWebhookConfig(wc)
+		return
+	}
+
+	// Rebuild the webhook configuration and reconcile with the
+	// existing validatingwebhookconfiguration.
+	if err := wc.rebuildValidatingWebhookConfig(); err == nil {
+		updateErr := wc.createOrUpdateValidatingWebhookConfig()
+		if updateErr != nil {
+			log.Errorf("error when updating validatingwebhookconfiguration: %v", updateErr)
+		}
+	}
+}
+
+// Update the CA certificate and webhookconfiguration
+func updateCertAndWebhookConfig(wc *WebhookController) {
+	certChanged, err := reloadCaCert(wc)
+	if err != nil || !certChanged {
+		// No certificate change
+		return
+	}
+	log.Debug("CA cert changed, update webhook certs and webhook configuration")
+	// Update the webhook certificates
+	for _, name := range WebhookSecretNames {
+		wc.upsertSecret(name, wc.namespace)
+	}
+
+	// Rebuild the webhook configuration and reconcile with the
+	// existing mutatingwebhookconfiguration.
+	if err := wc.rebuildMutatingWebhookConfig(); err == nil {
+		updateErr := wc.createOrUpdateMutatingWebhookConfig()
+		if updateErr != nil {
+			log.Errorf("error when updating mutatingwebhookconfiguration: %v", updateErr)
+		}
+	}
+}
+
+// Reload CA cert from file and return whether CA cert is changed
+func reloadCaCert(wc *WebhookController) (bool, error) {
+	certChanged := false
+	wc.mutex.Lock()
+	defer wc.mutex.Unlock()
+	caCert, err := readCACert(wc.k8sCaCertFile)
+	if err != nil {
+		log.Errorf("failed to read CA certificate: %v", err)
+		return certChanged, err
+	}
+	if !bytes.Equal(caCert, wc.curCACert) {
+		wc.curCACert = append([]byte(nil), caCert...)
+		certChanged = true
+	}
+	return certChanged, nil
 }

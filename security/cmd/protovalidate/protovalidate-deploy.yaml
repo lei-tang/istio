@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: protovalidate
+  namespace: istio-system
+  labels:
+    istio: protovalidate
+spec:
+  ports:
+    - port: 443
+      name: https-validation
+  selector:
+    istio: protovalidate
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: istio-protovalidate-service-account
+  namespace: istio-system
+  labels:
+    app: security
+    chart: security
+    heritage: Tiller
+    release: istio
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: istio-protovalidate
+  namespace: istio-system
+  labels:
+    app: security
+    chart: security
+    heritage: Tiller
+    release: istio
+    istio: protovalidate
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      istio: protovalidate
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: security
+        chart: security
+        heritage: Tiller
+        release: istio
+        istio: protovalidate
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      serviceAccountName: istio-protovalidate-service-account
+      containers:
+        - name: protovalidate
+          image: "gcr.io/endpoints-authz-test1/protovalidate:chiron_develop_7_11_2019"
+          imagePullPolicy: Always
+          resources:
+            requests:
+              cpu: 10m
+          volumeMounts:
+          - mountPath: /etc/webhookcerts
+            name: webhookcerts
+            readOnly: true
+      volumes:
+        - name: webhookcerts
+          secret:
+            defaultMode: 420
+            secretName: istio.webhook.istio-protovalidate-service-account

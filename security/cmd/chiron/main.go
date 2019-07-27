@@ -121,13 +121,13 @@ func init() {
 	flags.StringVar(&opts.mutatingWebhookConfigFiles, "mutating-webhook-config-files", "/etc/protomutate-webhook-config/mutatingwebhookconfiguration.yaml",
 		"The file paths of the mutatingwebhookconfigurations, separated by comma.")
 	flags.StringVar(&opts.mutatingWebhookConfigNames, "mutating-webhook-config-names", "istio-sidecar-injector",
-		"The names of the mutatingwebhookconfiguration resources in Kubernetes, separated by comma. Chiron will manage them.")
+		"The names of the mutatingwebhookconfiguration resources in Kubernetes, separated by comma. Currently, Chiron will only manage the first one.")
 
 	// ValidatingWebhook configuration
-	flags.StringVar(&opts.validatingWebhookConfigFiles, "validatating-webhook-config-files", "/etc/protovalidate-webhook-config/validatingwebhookconfiguration.yaml",
+	flags.StringVar(&opts.validatingWebhookConfigFiles, "validating-webhook-config-files", "/etc/protovalidate-webhook-config/validatingwebhookconfiguration.yaml",
 		"The file paths of the validatingwebhookconfigurations, separated by comma.")
 	flags.StringVar(&opts.validatingWebhookConfigNames, "validating-webhook-config-names", "istio-galley",
-		"The names of the validatingwebhookconfiguration resources in Kubernetes, separated by comma. Chiron will manage them.")
+		"The names of the validatingwebhookconfiguration resources in Kubernetes, separated by comma. Currently, Chiron will only manage the first one.")
 
 	// Hide the command line options for the prototype
 	_ = flags.MarkHidden("enable-controller")
@@ -175,12 +175,15 @@ func runWebhookController() {
 
 	mutatingWebhookConfigFiles := strings.Split(opts.mutatingWebhookConfigFiles, ",")
 	mutatingWebhookConfigNames := strings.Split(opts.mutatingWebhookConfigNames, ",")
+	validatingWebhookConfigFiles := strings.Split(opts.validatingWebhookConfigFiles, ",")
+	validatingWebhookConfigNames := strings.Split(opts.validatingWebhookConfigNames, ",")
 
 	stopCh := make(chan struct{})
 
 	sc, err := chiron.NewWebhookController(opts.certGracePeriodRatio, opts.certMinGracePeriod,
 		k8sClient, k8sClient.CoreV1(), k8sClient.CertificatesV1beta1(),
-		opts.k8sCaCertFile, opts.certificateNamespace, mutatingWebhookConfigFiles, mutatingWebhookConfigNames)
+		opts.k8sCaCertFile, opts.certificateNamespace, mutatingWebhookConfigFiles, mutatingWebhookConfigNames,
+		validatingWebhookConfigFiles, validatingWebhookConfigNames)
 	if err != nil {
 		log.Errorf("failed to create webhook controller: %v", err)
 		os.Exit(1)
@@ -188,7 +191,9 @@ func runWebhookController() {
 
 	// Run the controller to manage the lifecycles of webhook certificates and webhook configurations
 	sc.Run(stopCh)
-	defer sc.ConfigWatcher.Close()
+	defer sc.K8sCaCertWatcher.Close()
+	defer sc.MutatingWebhookFileWatcher.Close()
+	defer sc.ValidatingWebhookFileWatcher.Close()
 
 	istiocmd.WaitSignal(stopCh)
 }
