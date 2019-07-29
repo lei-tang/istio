@@ -52,6 +52,9 @@ const (
 
 /* #nosec: disable gas linter */
 const (
+	// The prefix of webhook secret name
+	prefixWebhookSecretName = "istio.webhook"
+
 	// The Istio webhook secret annotation type
 	IstioSecretType = "istio.io/webhook-key-and-cert"
 
@@ -93,15 +96,6 @@ var (
 		"protovalidate",
 		// "istio-sidecar-injector",
 		// "istio-galley",
-	}
-
-	// WebhookSecretNames is secret names of the webhooks. Each item corresponds to an item
-	//at the same index in WebhookServiceNames.
-	WebhookSecretNames = []string{
-		"istio.webhook.istio-protomutate-service-account",
-		"istio.webhook.istio-protovalidate-service-account",
-		// "istio.webhook.istio-sidecar-injector-service-account",
-		// "istio.webhook.istio-galley-service-account",
 	}
 
 	// WebhookTypes is the types of the webhooks. Each item corresponds to an item
@@ -161,14 +155,13 @@ type WebhookController struct {
 	ValidatingWebhookFileWatcher *fsnotify.Watcher
 
 	// Current CA certificate
-	curCACert []byte
+	CACert []byte
 
 	mutex sync.RWMutex
 }
 
 // NewWebhookController returns a pointer to a newly constructed WebhookController instance.
 func NewWebhookController(gracePeriodRatio float32, minGracePeriod time.Duration, k8sClient *kubernetes.Clientset,
-	core corev1.CoreV1Interface, certClient certclient.CertificatesV1beta1Interface,
 	k8sCaCertFile, nameSpace string, mutatingWebhookConfigFiles, mutatingWebhookConfigNames,
 	validatingWebhookConfigFiles, validatingWebhookConfigNames []string) (*WebhookController, error) {
 
@@ -180,13 +173,14 @@ func NewWebhookController(gracePeriodRatio float32, minGracePeriod time.Duration
 			gracePeriodRatio, recommendedMinGracePeriodRatio, recommendedMaxGracePeriodRatio)
 	}
 
+	core := k8sClient.CoreV1()
 	c := &WebhookController{
 		gracePeriodRatio:             gracePeriodRatio,
 		minGracePeriod:               minGracePeriod,
 		k8sCaCertFile:                k8sCaCertFile,
 		k8sClient:                    k8sClient,
 		core:                         core,
-		certClient:                   certClient,
+		certClient:                   k8sClient.CertificatesV1beta1(),
 		namespace:                    nameSpace,
 		mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
 		mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
@@ -200,7 +194,7 @@ func NewWebhookController(gracePeriodRatio float32, minGracePeriod time.Duration
 		log.Errorf("failed to read CA certificate: %v", err)
 		return nil, err
 	}
-	c.setCurCACert(caCert)
+	c.setCACert(caCert)
 
 	namespaces := []string{nameSpace}
 
@@ -255,8 +249,8 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 	log.Debugf("*************** enter Run() of WebhookController")
 
 	// Create secrets containing certificates for webhooks
-	for _, scrtName := range WebhookSecretNames {
-		wc.upsertSecret(scrtName, wc.namespace)
+	for _, svcName := range WebhookServiceNames {
+		wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(svcName), wc.namespace)
 	}
 
 	// Currently, Chiron only patches one mutating webhook and one validating webhook.
@@ -324,7 +318,7 @@ func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) {
 	secret.Data = map[string][]byte{
 		CertChainID:  chain,
 		PrivateKeyID: key,
-		RootCertID:   wc.getCurCACert(),
+		RootCertID:   wc.getCACert(),
 	}
 
 	// We retry several times when create secret to mitigate transient network failures.
@@ -409,7 +403,7 @@ func (wc *WebhookController) scrtUpdated(oldObj, newObj interface{}) {
 	// to expire, or 2) the root certificate in the secret is different than the
 	// one held by the ca (this may happen when the CA is restarted and
 	// a new self-signed CA cert is generated).
-	if certLifeTimeLeft < gracePeriod || !bytes.Equal(wc.getCurCACert(), scrt.Data[RootCertID]) {
+	if certLifeTimeLeft < gracePeriod || !bytes.Equal(wc.getCACert(), scrt.Data[RootCertID]) {
 		log.Infof("Refreshing secret %s/%s, either the leaf certificate is about to expire "+
 			"or the root certificate is outdated", namespace, name)
 
@@ -436,7 +430,7 @@ func (wc *WebhookController) refreshSecret(scrt *v1.Secret) error {
 
 	scrt.Data[CertChainID] = chain
 	scrt.Data[PrivateKeyID] = key
-	scrt.Data[RootCertID] = wc.getCurCACert()
+	scrt.Data[RootCertID] = wc.getCACert()
 
 	_, err = wc.core.Secrets(namespace).Update(scrt)
 	return err
@@ -456,8 +450,8 @@ func (wc *WebhookController) cleanUpCertGen(csrName string) error {
 
 // Return whether the input secret name is a Webhook secret
 func (wc *WebhookController) isWebhookSecret(name, namespace string) bool {
-	for _, n := range WebhookSecretNames {
-		if name == n && namespace == wc.namespace {
+	for _, n := range WebhookServiceNames {
+		if name == wc.getWebhookSecretNameFromSvcname(n) && namespace == wc.namespace {
 			return true
 		}
 	}
@@ -534,24 +528,24 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 	}
 }
 
-func (wc *WebhookController) getCurCACert() []byte {
+func (wc *WebhookController) getCACert() []byte {
 	wc.mutex.Lock()
-	cp := append([]byte(nil), wc.curCACert...)
+	cp := append([]byte(nil), wc.CACert...)
 	wc.mutex.Unlock()
 	return cp
 }
 
-func (wc *WebhookController) setCurCACert(cert []byte) {
+func (wc *WebhookController) setCACert(cert []byte) {
 	wc.mutex.Lock()
-	wc.curCACert = append([]byte(nil), cert...)
+	wc.CACert = append([]byte(nil), cert...)
 	wc.mutex.Unlock()
 }
 
 // Get the service name for the secret. Return the service name and whether it is found.
 func (wc *WebhookController) getServiceName(secretName string) (string, bool) {
-	for i, name := range WebhookSecretNames {
-		if name == secretName {
-			return WebhookServiceNames[i], true
+	for _, name := range WebhookServiceNames {
+		if wc.getWebhookSecretNameFromSvcname(name) == secretName {
+			return name, true
 		}
 	}
 	return "", false
@@ -734,7 +728,7 @@ func (wc *WebhookController) rebuildMutatingWebhookConfig() error {
 
 	// In the prototype, only one mutating webhook is rebuilt
 	webhookConfig, err := rebuildMutatingWebhookConfigHelper(
-		wc.getCurCACert(),
+		wc.getCACert(),
 		wc.mutatingWebhookConfigFiles[0],
 		wc.mutatingWebhookConfigNames[0],
 	)
@@ -769,7 +763,7 @@ func (wc *WebhookController) rebuildValidatingWebhookConfig() error {
 
 	// In the prototype, only one validating webhook is rebuilt
 	webhookConfig, err := rebuildValidatingWebhookConfigHelper(
-		wc.getCurCACert(),
+		wc.getCACert(),
 		wc.validatingWebhookConfigFiles[0],
 		wc.validatingWebhookConfigNames[0],
 	)
@@ -812,4 +806,9 @@ func (wc *WebhookController) getValidatingWebhookItemIdx() int {
 		}
 	}
 	return -1
+}
+
+// Return the webhook secret name based on the service name
+func (wc *WebhookController) getWebhookSecretNameFromSvcname(svcName string) string {
+	return fmt.Sprintf("%s.%s", prefixWebhookSecretName, svcName)
 }

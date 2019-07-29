@@ -164,7 +164,7 @@ func genKeyCertK8sCA(wc *WebhookController, secretName string, secretNamespace, 
 		}
 		return nil, nil, fmt.Errorf("failed to read the certificate for CSR (%v)", csrName)
 	}
-	caCert := wc.getCurCACert()
+	caCert := wc.getCACert()
 	// Verify the certificate chain before returning the certificate
 	roots := x509.NewCertPool()
 	if roots == nil {
@@ -465,8 +465,8 @@ func updateCertAndWebhookConfig(wc *WebhookController) {
 	}
 	log.Debug("CA cert changed, update webhook certs and webhook configuration")
 	// Update the webhook certificates
-	for _, name := range WebhookSecretNames {
-		wc.upsertSecret(name, wc.namespace)
+	for _, name := range WebhookServiceNames {
+		wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(name), wc.namespace)
 	}
 
 	// Rebuild the webhook configuration and reconcile with the
@@ -489,8 +489,8 @@ func reloadCaCert(wc *WebhookController) (bool, error) {
 		log.Errorf("failed to read CA certificate: %v", err)
 		return certChanged, err
 	}
-	if !bytes.Equal(caCert, wc.curCACert) {
-		wc.curCACert = append([]byte(nil), caCert...)
+	if !bytes.Equal(caCert, wc.CACert) {
+		wc.CACert = append([]byte(nil), caCert...)
 		certChanged = true
 	}
 	return certChanged, nil

@@ -70,4 +70,4 @@ spec:
         - name: webhookcerts
           secret:
             defaultMode: 420
-            secretName: istio.webhook.istio-protovalidate-service-account
+            secretName: istio.webhook.protovalidate
