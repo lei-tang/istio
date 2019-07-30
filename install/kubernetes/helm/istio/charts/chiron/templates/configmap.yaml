@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-chiron-galley-webhook-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ template "chiron.name" . }}
+    chart: {{ template "chiron.chart" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+    istio: chiron
+data:
+  validatingwebhookconfiguration.yaml: |-
+    {{- include "validatingwebhookconfiguration.yaml.tpl" . | indent 4}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: istio-chiron-sidecarinjector-webhook-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ template "chiron.name" . }}
+    chart: {{ template "chiron.chart" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+    istio: chiron
+data:
+  mutatingwebhookconfiguration.yaml: |-
+    {{- include "mutatingwebhookconfiguration.yaml.tpl" . | indent 4}}
