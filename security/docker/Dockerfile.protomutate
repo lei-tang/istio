@@ -1,0 +1,10 @@
+# FROM scratch
+FROM istionightly/base_debug
+
+# obtained from debian ca-certs deb using fetch_cacerts.sh
+ADD ca-certificates.tgz /
+# All containers need a /tmp directory
+WORKDIR /tmp/
+ADD protomutate /usr/local/bin/protomutate
+
+ENTRYPOINT [ "/usr/local/bin/protomutate", "--log_output_level", "default:debug" ]

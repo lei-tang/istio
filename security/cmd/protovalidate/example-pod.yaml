@@ -1,0 +1,14 @@
+# without the required labels, the validation webhook will reject the pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx
+  labels:
+    app: web
+    protovalidate: enabled
+spec:
+  containers:
+    - name: front-end
+      image: nginx
+      ports:
+        - containerPort: 80

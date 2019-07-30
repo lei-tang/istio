@@ -22,7 +22,7 @@
 docker: build-linux test-bins-linux docker.all
 
 DOCKER_TARGETS:=docker.pilot docker.proxy_debug docker.proxytproxy docker.proxyv2 docker.app docker.app_sidecar docker.test_policybackend \
-	docker.proxy_init docker.mixer docker.mixer_codegen docker.citadel docker.galley docker.sidecar_injector docker.kubectl docker.node-agent-k8s
+	docker.proxy_init docker.mixer docker.mixer_codegen docker.citadel docker.galley docker.sidecar_injector docker.kubectl docker.node-agent-k8s docker.chiron docker.protomutate docker.protovalidate
 
 $(ISTIO_DOCKER) $(ISTIO_DOCKER_TAR):
 	mkdir -p $@
@@ -48,7 +48,7 @@ $(ISTIO_DOCKER)/node_agent.crt $(ISTIO_DOCKER)/node_agent.key: ${GEN_CERT} $(IST
 # 	cp $(ISTIO_OUT_LINUX)/$FILE $(ISTIO_DOCKER)/($FILE)
 DOCKER_FILES_FROM_ISTIO_OUT_LINUX:=pkg-test-echo-cmd-client pkg-test-echo-cmd-server \
                              pilot-discovery pilot-agent sidecar-injector mixs mixgen \
-                             istio_ca node_agent node_agent_k8s galley istio-iptables
+                             istio_ca node_agent node_agent_k8s galley istio-iptables chiron protomutate protovalidate
 $(foreach FILE,$(DOCKER_FILES_FROM_ISTIO_OUT_LINUX), \
         $(eval $(ISTIO_DOCKER)/$(FILE): $(ISTIO_OUT_LINUX)/$(FILE) | $(ISTIO_DOCKER); cp $(ISTIO_OUT_LINUX)/$(FILE) $(ISTIO_DOCKER)/$(FILE)))
 
@@ -226,6 +226,22 @@ docker.citadel-test: security/docker/Dockerfile.citadel-test
 docker.citadel-test: $(ISTIO_DOCKER)/istio_ca
 docker.citadel-test: $(ISTIO_DOCKER)/istio_ca.crt
 docker.citadel-test: $(ISTIO_DOCKER)/istio_ca.key
+	$(DOCKER_RULE)
+
+docker.chiron: security/docker/Dockerfile.chiron
+docker.chiron: $(ISTIO_DOCKER)/chiron
+docker.chiron: $(ISTIO_DOCKER)/ca-certificates.tgz
+	$(DOCKER_RULE)
+
+docker.protomutate: security/docker/Dockerfile.protomutate
+docker.protomutate: $(ISTIO_DOCKER)/protomutate
+docker.protomutate: $(ISTIO_DOCKER)/ca-certificates.tgz
+	$(DOCKER_RULE)
+
+
+docker.protovalidate: security/docker/Dockerfile.protovalidate
+docker.protovalidate: $(ISTIO_DOCKER)/protovalidate
+docker.protovalidate: $(ISTIO_DOCKER)/ca-certificates.tgz
 	$(DOCKER_RULE)
 
 docker.node-agent: security/docker/Dockerfile.node-agent

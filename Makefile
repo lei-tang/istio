@@ -410,7 +410,7 @@ GALLEY_BINS:=galley
 $(foreach ITEM,$(GALLEY_BINS),$(eval $(call genTargetsForNativeAndDocker,$(ITEM),./galley/cmd/$(ITEM),$(RELEASE_LDFLAGS))))
 
 # Build targets for apps under ./security/cmd
-SECURITY_BINS:=node_agent node_agent_k8s istio_ca
+SECURITY_BINS:=node_agent node_agent_k8s istio_ca chiron protomutate protovalidate
 $(foreach ITEM,$(SECURITY_BINS),$(eval $(call genTargetsForNativeAndDocker,$(ITEM),./security/cmd/$(ITEM),$(RELEASE_LDFLAGS))))
 
 # Build targets for apps under ./security/tools
@@ -421,7 +421,7 @@ $(foreach ITEM,$(SECURITY_TOOLS_BINS),$(eval $(call genTargetsForNativeAndDocker
 ISTIO_TOOLS_BINS:=hyperistio istio-iptables
 $(foreach ITEM,$(ISTIO_TOOLS_BINS),$(eval $(call genTargetsForNativeAndDocker,$(ITEM),./tools/$(ITEM),$(DEBUG_LDFLAGS))))
 
-BUILD_BINS:=$(PILOT_BINS) mixc mixs mixgen node_agent node_agent_k8s istio_ca istioctl galley sdsclient
+BUILD_BINS:=$(PILOT_BINS) mixc mixs mixgen node_agent node_agent_k8s istio_ca istioctl galley sdsclient chiron protomutate protovalidate
 LINUX_BUILD_BINS:=$(foreach buildBin,$(BUILD_BINS),$(ISTIO_OUT_LINUX)/$(buildBin))
 
 .PHONY: build
