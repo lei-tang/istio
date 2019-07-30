@@ -16,6 +16,8 @@ package chiron
 
 import (
 	"bytes"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"path/filepath"
 	"sync"
@@ -92,10 +94,10 @@ var (
 
 	// WebhookServiceNames is service names of the webhooks.
 	WebhookServiceNames = []string{
-		"protomutate",
-		"protovalidate",
-		// "istio-sidecar-injector",
-		// "istio-galley",
+		// "protomutate",
+		// "protovalidate",
+		"istio-sidecar-injector",
+		"istio-galley",
 	}
 
 	// WebhookTypes is the types of the webhooks. Each item corresponds to an item
@@ -315,10 +317,15 @@ func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) {
 			secretName, secretNamespace, err)
 		return
 	}
+	cert, err := wc.getCACert()
+	if err != nil {
+		log.Errorf("failed to get CA certificate: %v", err)
+		return
+	}
 	secret.Data = map[string][]byte{
 		CertChainID:  chain,
 		PrivateKeyID: key,
-		RootCertID:   wc.getCACert(),
+		RootCertID:   cert,
 	}
 
 	// We retry several times when create secret to mitigate transient network failures.
@@ -403,7 +410,12 @@ func (wc *WebhookController) scrtUpdated(oldObj, newObj interface{}) {
 	// to expire, or 2) the root certificate in the secret is different than the
 	// one held by the ca (this may happen when the CA is restarted and
 	// a new self-signed CA cert is generated).
-	if certLifeTimeLeft < gracePeriod || !bytes.Equal(wc.getCACert(), scrt.Data[RootCertID]) {
+	caCert, err := wc.getCACert()
+	if err != nil {
+		log.Errorf("failed to get CA certificate: %v", err)
+		return
+	}
+	if certLifeTimeLeft < gracePeriod || !bytes.Equal(caCert, scrt.Data[RootCertID]) {
 		log.Infof("Refreshing secret %s/%s, either the leaf certificate is about to expire "+
 			"or the root certificate is outdated", namespace, name)
 
@@ -428,9 +440,13 @@ func (wc *WebhookController) refreshSecret(scrt *v1.Secret) error {
 		return err
 	}
 
+	caCert, err := wc.getCACert()
+	if err != nil {
+		return err
+	}
 	scrt.Data[CertChainID] = chain
 	scrt.Data[PrivateKeyID] = key
-	scrt.Data[RootCertID] = wc.getCACert()
+	scrt.Data[RootCertID] = caCert
 
 	_, err = wc.core.Secrets(namespace).Update(scrt)
 	return err
@@ -466,6 +482,8 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 
 	for {
 		select {
+		// TODO (lei-tang): investigate whether some channels can be shared. The channels
+		// are separated now so one channel will not affect another.
 		case <-timerCert:
 			log.Debugf("************* enter timerCert handler")
 			timerCert = nil
@@ -528,11 +546,19 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 	}
 }
 
-func (wc *WebhookController) getCACert() []byte {
+func (wc *WebhookController) getCACert() ([]byte, error) {
 	wc.mutex.Lock()
 	cp := append([]byte(nil), wc.CACert...)
 	wc.mutex.Unlock()
-	return cp
+
+	block, _ := pem.Decode(cp)
+	if block == nil {
+		return nil, fmt.Errorf("invalid PEM encoded CA certificate")
+	}
+	if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+		return nil, fmt.Errorf("invalid ca certificate (%v), parsing error: %v", string(cp), err)
+	}
+	return cp, nil
 }
 
 func (wc *WebhookController) setCACert(cert []byte) {
@@ -599,7 +625,7 @@ func (wc *WebhookController) checkAndCreateMutatingWebhook(host string, port int
 			log.Debugf("webhook controlller is stopped")
 			return
 		default:
-			log.Debugf("the webhook service is unreachable, check again later ...")
+			log.Debugf("the webhook service at (%v, %v) is unreachable, check again later ...", host, port)
 			time.Sleep(2 * time.Second)
 		}
 	}
@@ -610,6 +636,8 @@ func (wc *WebhookController) checkAndCreateMutatingWebhook(host string, port int
 		if createErr != nil {
 			log.Errorf("error when creating or updating muatingwebhookconfiguration: %v", createErr)
 			return
+		} else {
+			log.Errorf("error when rebuilding mutatingwebhookconfiguration: %v", err)
 		}
 	}
 }
@@ -640,6 +668,8 @@ func (wc *WebhookController) checkAndCreateValidatingWebhook(host string, port i
 			log.Errorf("error when creating or updating validatingwebhookconfiguration: %v", createErr)
 			return
 		}
+	} else {
+		log.Errorf("error when rebuilding mutatingwebhookconfiguration: %v", err)
 	}
 }
 
@@ -726,9 +756,13 @@ func (wc *WebhookController) rebuildMutatingWebhookConfig() error {
 		return fmt.Errorf("no mutatingwebhook item is found")
 	}
 
+	caCert, err := wc.getCACert()
+	if err != nil {
+		return err
+	}
 	// In the prototype, only one mutating webhook is rebuilt
 	webhookConfig, err := rebuildMutatingWebhookConfigHelper(
-		wc.getCACert(),
+		caCert,
 		wc.mutatingWebhookConfigFiles[0],
 		wc.mutatingWebhookConfigNames[0],
 	)
@@ -761,9 +795,13 @@ func (wc *WebhookController) rebuildValidatingWebhookConfig() error {
 		return fmt.Errorf("no validatingwebhook item is found")
 	}
 
+	caCert, err := wc.getCACert()
+	if err != nil {
+		return err
+	}
 	// In the prototype, only one validating webhook is rebuilt
 	webhookConfig, err := rebuildValidatingWebhookConfigHelper(
-		wc.getCACert(),
+		caCert,
 		wc.validatingWebhookConfigFiles[0],
 		wc.validatingWebhookConfigNames[0],
 	)

@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: istio-chiron
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ template "chiron.name" . }}
+    chart: {{ template "chiron.chart" . }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+    istio: chiron
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      istio: chiron
+  strategy:
+    rollingUpdate:
+      maxSurge: {{ .Values.rollingMaxSurge }}
+      maxUnavailable: {{ .Values.rollingMaxUnavailable }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "chiron.name" . }}
+        chart: {{ template "chiron.chart" . }}
+        heritage: {{ .Release.Service }}
+        release: {{ .Release.Name }}      
+        istio: chiron
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      serviceAccountName: istio-chiron-service-account
+{{- if .Values.global.priorityClassName }}
+      priorityClassName: "{{ .Values.global.priorityClassName }}"
+{{- end }}
+      containers:
+        - name: chiron
+{{- if contains "/" .Values.image }}
+          image: "{{ .Values.image }}"
+{{- else }}
+          image: "{{ .Values.global.hub }}/{{ .Values.image }}:{{ .Values.global.tag }}"
+{{- end }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command:
+          - /usr/local/bin/chiron
+          - --enable-controller
+          - --webhook-config-files
+          - /etc/sidecarinjector-webhook-config/mutatingwebhookconfiguration.yaml,/etc/galley-webhook-config/validatingwebhookconfiguration.yaml
+          - --mutating-webhook-config-names
+          - istio-sidecar-injector
+          - --validating-webhook-config-names
+          - istio-galley
+          - --certificate-namespace={{ .Release.Namespace }}
+{{- if $.Values.global.logging.level }}
+          - --log_output_level={{ $.Values.global.logging.level }}
+{{- end}}
+          volumeMounts:
+            - name: galley-webhook-config
+              mountPath: /etc/galley-webhook-config
+              readOnly: true
+            - name: sidecarinjector-webhook-config
+              mountPath: /etc/sidecarinjector-webhook-config
+              readOnly: true
+          resources:
+{{- if .Values.resources }}
+{{ toYaml .Values.resources | indent 12 }}
+{{- else }}
+{{ toYaml .Values.global.defaultResources | indent 12 }}
+{{- end }}
+      volumes:
+      - name: galley-webhook-config
+        configMap:
+          name: istio-chiron-galley-webhook-config
+      - name: sidecarinjector-webhook-config
+        configMap:
+          name: istio-chiron-sidecarinjector-webhook-config
+      affinity:
+      {{- include "nodeaffinity" . | indent 6 }}
+      {{- include "podAntiAffinity" . | indent 6 }}
+      {{- if .Values.tolerations }}
+      tolerations:
+{{ toYaml .Values.tolerations | indent 6 }}
+      {{- else if .Values.global.defaultTolerations }}
+      tolerations:
+{{ toYaml .Values.global.defaultTolerations | indent 6 }}
+      {{- end }}
