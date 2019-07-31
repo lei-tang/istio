@@ -57,7 +57,7 @@ spec:
       serviceAccountName: istio-protovalidate-service-account
       containers:
         - name: protovalidate
-          image: "gcr.io/endpoints-authz-test1/protovalidate:chiron_develop_7_11_2019"
+          image: "gcr.io/endpoints-authz-test1/protovalidate:chiron-develop-7-29-2019"
           imagePullPolicy: Always
           resources:
             requests:

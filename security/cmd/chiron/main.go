@@ -15,10 +15,14 @@
 package main
 
 import (
+	"io/ioutil"
 	"os"
 	"strings"
 	"time"
 
+	"k8s.io/api/admissionregistration/v1beta1"
+
+	"github.com/ghodss/yaml"
 	"github.com/spf13/cobra"
 	"github.com/spf13/cobra/doc"
 
@@ -32,6 +36,11 @@ import (
 	"istio.io/pkg/ctrlz"
 	"istio.io/pkg/log"
 	"istio.io/pkg/version"
+)
+
+const (
+	mutatingWebhookConfigurationKind   = "mutatingwebhookconfiguration"
+	validatingWebhookConfigurationKind = "validatingwebhookconfiguration"
 )
 
 var (
@@ -62,16 +71,12 @@ type cliOptions struct {
 	// The file path of k8s CA certificate
 	k8sCaCertFile string
 
-	// The file paths of the mutatingwebhookconfigurations.
-	// In prototype, only one path is supported.
-	mutatingWebhookConfigFiles string
+	// The file paths of the webhookconfigurations.
+	// In prototype, only one mutatingwebhookconfiguration file and one validatingwebhookconfiguration are supported.
+	webhookConfigFiles string
 	// The names of the MutatingWebhookConfiguration to manage
 	// In prototype, only one is supported.
 	mutatingWebhookConfigNames string
-
-	// The file paths of the validatingwebhookconfigurations.
-	// In prototype, only one path is supported.
-	validatingWebhookConfigFiles string
 	// The names of the valitatingWebhookConfiguration to manage
 	// In prototype, only one is supported.
 	validatingWebhookConfigNames string
@@ -118,14 +123,11 @@ func init() {
 		cmd.DefaultWorkloadMinCertGracePeriod, "The minimum certificate rotation grace period.")
 
 	// MutatingWebhook configuration
-	flags.StringVar(&opts.mutatingWebhookConfigFiles, "mutating-webhook-config-files", "/etc/protomutate-webhook-config/mutatingwebhookconfiguration.yaml",
-		"The file paths of the mutatingwebhookconfigurations, separated by comma.")
+	flags.StringVar(&opts.webhookConfigFiles, "webhook-config-files", "/etc/protovalidate-webhook-config/validatingwebhookconfiguration.yaml,/etc/protomutate-webhook-config/mutatingwebhookconfiguration.yaml",
+		"The file paths of the webhookconfigurations, separated by comma. "+
+			"Only one mutatingwebhookconfiguration file and one validatingwebhookconfiguration are supported.")
 	flags.StringVar(&opts.mutatingWebhookConfigNames, "mutating-webhook-config-names", "istio-sidecar-injector",
 		"The names of the mutatingwebhookconfiguration resources in Kubernetes, separated by comma. Currently, Chiron will only manage the first one.")
-
-	// ValidatingWebhook configuration
-	flags.StringVar(&opts.validatingWebhookConfigFiles, "validating-webhook-config-files", "/etc/protovalidate-webhook-config/validatingwebhookconfiguration.yaml",
-		"The file paths of the validatingwebhookconfigurations, separated by comma.")
 	flags.StringVar(&opts.validatingWebhookConfigNames, "validating-webhook-config-names", "istio-galley",
 		"The names of the validatingwebhookconfiguration resources in Kubernetes, separated by comma. Currently, Chiron will only manage the first one.")
 
@@ -135,9 +137,8 @@ func init() {
 	_ = flags.MarkHidden("kube-config")
 	_ = flags.MarkHidden("cert-grace-period-ratio")
 	_ = flags.MarkHidden("cert-min-grace-period")
-	_ = flags.MarkHidden("mutating-webhook-config-files")
+	_ = flags.MarkHidden("webhook-config-files")
 	_ = flags.MarkHidden("mutating-webhook-config-names")
-	_ = flags.MarkHidden("validating-webhook-config-files")
 	_ = flags.MarkHidden("validating-webhook-config-names")
 
 	rootCmd.AddCommand(version.CobraCommand())
@@ -173,10 +174,22 @@ func runWebhookController() {
 		os.Exit(1)
 	}
 
-	mutatingWebhookConfigFiles := strings.Split(opts.mutatingWebhookConfigFiles, ",")
+	webhookConfigFiles := strings.Split(opts.webhookConfigFiles, ",")
 	mutatingWebhookConfigNames := strings.Split(opts.mutatingWebhookConfigNames, ",")
-	validatingWebhookConfigFiles := strings.Split(opts.validatingWebhookConfigFiles, ",")
 	validatingWebhookConfigNames := strings.Split(opts.validatingWebhookConfigNames, ",")
+
+	var mutatingWebhookConfigFiles, validatingWebhookConfigFiles []string
+	for _, fileName := range webhookConfigFiles {
+		if b, err := isMutatingWebhookConfiguration(fileName); err == nil && b {
+			mutatingWebhookConfigFiles = append(mutatingWebhookConfigFiles, fileName)
+		} else if b, err := isValidatingWebhookConfiguration(fileName); err == nil && b {
+			validatingWebhookConfigFiles = append(validatingWebhookConfigFiles, fileName)
+		}
+	}
+	if len(mutatingWebhookConfigFiles) == 0 || len(validatingWebhookConfigFiles) == 0 {
+		log.Error("no validatingwebhookconfiguration files or no mutatingwebhookconfiguration files")
+		os.Exit(1)
+	}
 
 	stopCh := make(chan struct{})
 
@@ -195,4 +208,34 @@ func runWebhookController() {
 	defer sc.ValidatingWebhookFileWatcher.Close()
 
 	istiocmd.WaitSignal(stopCh)
+}
+
+func isMutatingWebhookConfiguration(fileName string) (bool, error) {
+	webhookConfigData, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		return false, err
+	}
+	var webhookConfig v1beta1.MutatingWebhookConfiguration
+	if err := yaml.Unmarshal(webhookConfigData, &webhookConfig); err != nil {
+		return false, err
+	}
+	if !strings.EqualFold(webhookConfig.Kind, mutatingWebhookConfigurationKind) {
+		return false, nil
+	}
+	return true, nil
+}
+
+func isValidatingWebhookConfiguration(fileName string) (bool, error) {
+	webhookConfigData, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		return false, err
+	}
+	var webhookConfig v1beta1.ValidatingWebhookConfiguration
+	if err := yaml.Unmarshal(webhookConfigData, &webhookConfig); err != nil {
+		return false, err
+	}
+	if !strings.EqualFold(webhookConfig.Kind, validatingWebhookConfigurationKind) {
+		return false, nil
+	}
+	return true, nil
 }

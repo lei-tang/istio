@@ -164,7 +164,11 @@ func genKeyCertK8sCA(wc *WebhookController, secretName string, secretNamespace, 
 		}
 		return nil, nil, fmt.Errorf("failed to read the certificate for CSR (%v)", csrName)
 	}
-	caCert := wc.getCACert()
+	caCert, err := wc.getCACert()
+	if err != nil {
+		log.Errorf("error when getting CA cert (%v)", err)
+		return nil, nil, err
+	}
 	// Verify the certificate chain before returning the certificate
 	roots := x509.NewCertPool()
 	if roots == nil {
