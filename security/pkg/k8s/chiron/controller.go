@@ -94,10 +94,10 @@ var (
 
 	// WebhookServiceNames is service names of the webhooks.
 	WebhookServiceNames = []string{
-		// "protomutate",
-		// "protovalidate",
-		"istio-sidecar-injector",
-		"istio-galley",
+		"protomutate",
+		"protovalidate",
+		// "istio-sidecar-injector",
+		// "istio-galley",
 	}
 
 	// WebhookTypes is the types of the webhooks. Each item corresponds to an item

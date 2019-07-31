@@ -5,7 +5,7 @@ metadata:
   name: nginx
   labels:
     app: web
-    protovalidate: enabled
+    must-have-label: enabled
 spec:
   containers:
     - name: front-end

@@ -203,7 +203,7 @@ spec:
       serviceAccountName: istio-chiron-service-account
       containers:
         - name: chiron
-          image: "gcr.io/endpoints-authz-test1/chiron:chiron_develop_7_11_2019"
+          image: "gcr.io/endpoints-authz-test1/chiron:chiron-develop-7-29-2019"
           imagePullPolicy: Always
           args:
             - "--log_output_level"
