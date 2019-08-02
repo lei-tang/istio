@@ -490,7 +490,6 @@ func reloadCaCert(wc *WebhookController) (bool, error) {
 	defer wc.mutex.Unlock()
 	caCert, err := readCACert(wc.k8sCaCertFile)
 	if err != nil {
-		log.Errorf("failed to read CA certificate: %v", err)
 		return certChanged, err
 	}
 	if !bytes.Equal(caCert, wc.CACert) {
