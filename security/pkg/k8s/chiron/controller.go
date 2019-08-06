@@ -157,9 +157,8 @@ type WebhookController struct {
 	ValidatingWebhookFileWatcher *fsnotify.Watcher
 
 	// Current CA certificate
-	CACert []byte
-
-	mutex sync.RWMutex
+	CACert    []byte
+	certMutex sync.RWMutex
 }
 
 // NewWebhookController returns a pointer to a newly constructed WebhookController instance.
@@ -192,7 +191,7 @@ func NewWebhookController(deleteWebhookConfigurationsOnExit bool, gracePeriodRat
 	}
 
 	// read CA cert at the beginning of launching the controller and when the CA cert changes.
-	_, err := reloadCaCert(c)
+	_, err := reloadCACert(c)
 	if err != nil {
 		return nil, err
 	}
@@ -312,21 +311,16 @@ func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) {
 	}
 
 	// Now we know the secret does not exist yet. So we create a new one.
-	chain, key, err := genKeyCertK8sCA(wc, secretName, secretNamespace, svcName)
+	chain, key, caCert, err := genKeyCertK8sCA(wc, secretName, secretNamespace, svcName)
 	if err != nil {
 		log.Errorf("failed to generate key and certificate for secret %v in namespace %v (error %v)",
 			secretName, secretNamespace, err)
 		return
 	}
-	cert, err := wc.getCACert()
-	if err != nil {
-		log.Errorf("failed to get CA certificate: %v", err)
-		return
-	}
 	secret.Data = map[string][]byte{
 		CertChainID:  chain,
 		PrivateKeyID: key,
-		RootCertID:   cert,
+		RootCertID:   caCert,
 	}
 
 	// We retry several times when create secret to mitigate transient network failures.
@@ -436,15 +430,11 @@ func (wc *WebhookController) refreshSecret(scrt *v1.Secret) error {
 		return fmt.Errorf("failed to find the service name for the secret (%v) to refresh", scrtName)
 	}
 
-	chain, key, err := genKeyCertK8sCA(wc, scrtName, namespace, svcName)
+	chain, key, caCert, err := genKeyCertK8sCA(wc, scrtName, namespace, svcName)
 	if err != nil {
 		return err
 	}
 
-	caCert, err := wc.getCACert()
-	if err != nil {
-		return err
-	}
 	scrt.Data[CertChainID] = chain
 	scrt.Data[PrivateKeyID] = key
 	scrt.Data[RootCertID] = caCert
@@ -554,10 +544,11 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 	}
 }
 
+// Get the CA cert. K8sCaCertWatcher handles the update of CA cert.
 func (wc *WebhookController) getCACert() ([]byte, error) {
-	wc.mutex.Lock()
+	wc.certMutex.Lock()
 	cp := append([]byte(nil), wc.CACert...)
-	wc.mutex.Unlock()
+	wc.certMutex.Unlock()
 
 	block, _ := pem.Decode(cp)
 	if block == nil {
@@ -664,7 +655,7 @@ func (wc *WebhookController) checkAndCreateMutatingWebhook(host string, port int
 
 	// Delete the existing webhookconfiguration, if any.
 	wc.deleteMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0])
-	// Try to create the initial webhook configuration (if it doesn't already exist).
+	// Try to create the initial webhook configuration.
 	err := wc.rebuildMutatingWebhookConfig()
 	if err == nil {
 		createErr := wc.createOrUpdateMutatingWebhookConfig()
@@ -698,7 +689,7 @@ func (wc *WebhookController) checkAndCreateValidatingWebhook(host string, port i
 
 	// Delete the existing webhookconfiguration, if any.
 	wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
-	// Try to create the initial webhook configuration (if it doesn't already exist).
+	// Try to create the initial webhook configuration.
 	err := wc.rebuildValidatingWebhookConfig()
 	if err == nil {
 		createErr := wc.createOrUpdateValidatingWebhookConfig()

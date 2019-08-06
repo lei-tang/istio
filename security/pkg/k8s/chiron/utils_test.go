@@ -143,12 +143,13 @@ func TestRebuildMutatingWebhookConfigHelper(t *testing.T) {
 	}
 }
 
-func TestReloadCaCert(t *testing.T) {
+func TestReloadCACert(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 
 	testCases := map[string]struct {
+		deleteWebhookConfigOnExit    bool
 		gracePeriodRatio             float32
 		minGracePeriod               time.Duration
 		k8sCaCertFile                string
@@ -162,6 +163,7 @@ func TestReloadCaCert(t *testing.T) {
 		expectChanged       bool
 	}{
 		"reload from valid CA cert path": {
+			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
 			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
@@ -172,7 +174,7 @@ func TestReloadCaCert(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		wc, err := NewWebhookController(tc.gracePeriodRatio, tc.minGracePeriod,
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
 			tc.validatingWebhookConfigFiles, tc.validatingWebhookConfigNames)
@@ -180,7 +182,7 @@ func TestReloadCaCert(t *testing.T) {
 			t.Errorf("failed at creating webhook controller: %v", err)
 			continue
 		}
-		changed, err := reloadCaCert(wc)
+		changed, err := reloadCACert(wc)
 		if tc.expectReloadingFail {
 			if err == nil {
 				t.Errorf("should have failed at reloading CA cert")

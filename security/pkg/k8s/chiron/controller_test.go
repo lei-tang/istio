@@ -27,6 +27,7 @@ func TestNewWebhookController(t *testing.T) {
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 
 	testCases := map[string]struct {
+		deleteWebhookConfigOnExit    bool
 		gracePeriodRatio             float32
 		minGracePeriod               time.Duration
 		k8sCaCertFile                string
@@ -75,7 +76,7 @@ func TestNewWebhookController(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		_, err := NewWebhookController(tc.gracePeriodRatio, tc.minGracePeriod,
+		_, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
 			tc.validatingWebhookConfigFiles, tc.validatingWebhookConfigNames)

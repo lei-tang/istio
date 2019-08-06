@@ -728,16 +728,16 @@ func (wc *WebhookController) watchCACert(stopCh chan struct{}) {
 }
 
 func (wc *WebhookController) getCurCACert() []byte {
-	wc.mutex.Lock()
+	wc.certMutex.Lock()
 	copy := append([]byte(nil), wc.curCACert...)
-	wc.mutex.Unlock()
+	wc.certMutex.Unlock()
 	return copy
 }
 
 func (wc *WebhookController) setCurCACert(cert []byte) {
-	wc.mutex.Lock()
+	wc.certMutex.Lock()
 	wc.curCACert = append([]byte(nil), cert...)
-	wc.mutex.Unlock()
+	wc.certMutex.Unlock()
 }
 
 func (wc *WebhookController) patchMutatingCertLoop(client *kubernetes.Clientset, webhookConfigName, webhookName string, stopCh <-chan struct{}) error {
