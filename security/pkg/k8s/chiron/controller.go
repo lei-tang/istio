@@ -511,7 +511,7 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 			log.Debugf("******************* mutatingwebhookconfiguration changes detected")
 			// When mutatingwebhookconfiguration updates, create or update
 			// mutatingwebhookconfiguration based on the config from rebuildMutatingWebhookConfig().
-			updateErr := wc.createOrUpdateMutatingWebhookConfig()
+			updateErr := createOrUpdateMutatingWebhookConfig(wc)
 			if updateErr != nil {
 				log.Errorf("error when updating mutatingwebhookconfiguration: %v", updateErr)
 			}
@@ -519,7 +519,7 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 			log.Debugf("******************* validatingwebhookconfiguration changes detected")
 			// When validatingwebhookconfiguration updates, create or update
 			// validatingwebhookconfiguration based on the config from rebuildValidatingWebhookConfig().
-			updateErr := wc.createOrUpdateValidatingWebhookConfig()
+			updateErr := createOrUpdateValidatingWebhookConfig(wc)
 			if updateErr != nil {
 				log.Errorf("error when updating validatingwebhookconfiguration: %v", updateErr)
 			}
@@ -564,40 +564,6 @@ func (wc *WebhookController) getServiceName(secretName string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// Create or update the mutatingwebhookconfiguration based on the config from rebuildMutatingWebhookConfig().
-func (wc *WebhookController) createOrUpdateMutatingWebhookConfig() error {
-	log.Debugf("****************** enter createOrUpdateMutatingWebhookConfig()")
-	if wc.mutatingWebhookConfig == nil {
-		return fmt.Errorf("mutatingwebhookconfiguration is nil")
-	}
-
-	client := wc.admission.MutatingWebhookConfigurations()
-	updated, err := createOrUpdateMutatingWebhookConfigHelper(client, wc.mutatingWebhookConfig)
-	if err != nil {
-		return err
-	} else if updated {
-		log.Infof("%v mutatingwebhookconfiguration updated", wc.mutatingWebhookConfig.Name)
-	}
-	return nil
-}
-
-// Create or update the validatingwebhookconfiguration based on the config from rebuildValidatingWebhookConfig().
-func (wc *WebhookController) createOrUpdateValidatingWebhookConfig() error {
-	log.Debugf("****************** enter createOrUpdateValidatingWebhookConfig()")
-	if wc.validatingWebhookConfig == nil {
-		return fmt.Errorf("validatingwebhookconfiguration is nil")
-	}
-
-	client := wc.admission.ValidatingWebhookConfigurations()
-	updated, err := createOrUpdateValidatingWebhookConfigHelper(client, wc.validatingWebhookConfig)
-	if err != nil {
-		return err
-	} else if updated {
-		log.Infof("%v validatingwebhookconfiguration updated", wc.validatingWebhookConfig.Name)
-	}
-	return nil
 }
 
 // Delete the mutatingwebhookconfiguration.
@@ -652,7 +618,7 @@ func (wc *WebhookController) checkAndCreateMutatingWebhook(host string, port int
 	// Try to create the initial webhook configuration.
 	err := wc.rebuildMutatingWebhookConfig()
 	if err == nil {
-		createErr := wc.createOrUpdateMutatingWebhookConfig()
+		createErr := createOrUpdateMutatingWebhookConfig(wc)
 		if createErr != nil {
 			log.Errorf("error when creating or updating muatingwebhookconfiguration: %v", createErr)
 			return
@@ -684,7 +650,7 @@ func (wc *WebhookController) checkAndCreateValidatingWebhook(host string, port i
 	// Try to create the initial webhook configuration.
 	err := wc.rebuildValidatingWebhookConfig()
 	if err == nil {
-		createErr := wc.createOrUpdateValidatingWebhookConfig()
+		createErr := createOrUpdateValidatingWebhookConfig(wc)
 		if createErr != nil {
 			log.Errorf("error when creating or updating validatingwebhookconfiguration: %v", createErr)
 			return
