@@ -143,6 +143,24 @@ func TestRebuildMutatingWebhookConfigHelper(t *testing.T) {
 	}
 }
 
+func TestRebuildValidatingWebhookConfigHelper(t *testing.T) {
+	configFile := "./test-data/example-validating-webhook-config.yaml"
+	configName := "proto-validate"
+	webhookConfig, err := rebuildValidatingWebhookConfigHelper(fakeCACert, configFile, configName)
+	if err != nil {
+		t.Fatalf("err rebuilding mutating webhook config: %v", err)
+	}
+	if webhookConfig.Name != configName {
+		t.Fatalf("webhookConfig.Name (%v) is different from %v", webhookConfig.Name, configName)
+	}
+	for i := range webhookConfig.Webhooks {
+		if !bytes.Equal(webhookConfig.Webhooks[i].ClientConfig.CABundle, fakeCACert) {
+			t.Fatalf("webhookConfig CA bundle(%v) is different from %v",
+				webhookConfig.Webhooks[i].ClientConfig.CABundle, fakeCACert)
+		}
+	}
+}
+
 func TestReloadCACert(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
