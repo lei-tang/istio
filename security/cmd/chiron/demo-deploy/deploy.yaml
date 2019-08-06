@@ -48,7 +48,7 @@ rules:
     verbs: ["*"]
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["mutatingwebhookconfigurations"]
-    verbs: ["create", "get", "list", "watch", "patch", "update"]
+    verbs: ["create", "delete", "get", "list", "watch", "patch", "update"]
   - apiGroups:
       - "certificates.k8s.io"
     resources:
@@ -209,6 +209,7 @@ spec:
             - "--log_output_level"
             - "debug"
             - "--enable-controller"
+            - "--delete-webhook-configurations-on-exit"
             - "--webhook-config-files"
             - "/etc/protomutate-webhook-config/mutatingwebhookconfiguration.yaml,/etc/protovalidate-webhook-config/validatingwebhookconfiguration.yaml"
             - "--mutating-webhook-config-names"

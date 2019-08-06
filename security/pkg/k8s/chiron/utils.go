@@ -269,17 +269,6 @@ func rebuildMutatingWebhookConfigHelper(
 			webhookConfigFile, err)
 	}
 
-	// fill in missing defaults to minimize desired vs. actual diffs later.
-	for i := 0; i < len(webhookConfig.Webhooks); i++ {
-		if webhookConfig.Webhooks[i].FailurePolicy == nil {
-			failurePolicy := v1beta1.Fail
-			webhookConfig.Webhooks[i].FailurePolicy = &failurePolicy
-		}
-		if webhookConfig.Webhooks[i].NamespaceSelector == nil {
-			webhookConfig.Webhooks[i].NamespaceSelector = &metav1.LabelSelector{}
-		}
-	}
-
 	// the webhook name is fixed at startup time
 	webhookConfig.Name = webhookConfigName
 
@@ -306,17 +295,6 @@ func rebuildValidatingWebhookConfigHelper(
 	if err := yaml.Unmarshal(webhookConfigData, &webhookConfig); err != nil {
 		return nil, fmt.Errorf("could not decode validatingwebhookconfiguration from %v: %v",
 			webhookConfigFile, err)
-	}
-
-	// fill in missing defaults to minimize desired vs. actual diffs later.
-	for i := 0; i < len(webhookConfig.Webhooks); i++ {
-		if webhookConfig.Webhooks[i].FailurePolicy == nil {
-			failurePolicy := v1beta1.Fail
-			webhookConfig.Webhooks[i].FailurePolicy = &failurePolicy
-		}
-		if webhookConfig.Webhooks[i].NamespaceSelector == nil {
-			webhookConfig.Webhooks[i].NamespaceSelector = &metav1.LabelSelector{}
-		}
 	}
 
 	// the webhook name is fixed at startup time
@@ -360,7 +338,6 @@ func createOrUpdateMutatingWebhookConfigHelper(
 	// only if the webhooks in the current is different from those configured. Only copy the relevant fields
 	// that we want reconciled and ignore everything else, e.g. labels, selectors.
 	updated := current.DeepCopyObject().(*v1beta1.MutatingWebhookConfiguration)
-	log.Debugf("*********** updated.Webhooks is %v", updated.Webhooks)
 	updated.Webhooks = webhookConfig.Webhooks
 	log.Debugf("*********** after assignment, updated.Webhooks is %v", updated.Webhooks)
 
@@ -407,7 +384,6 @@ func createOrUpdateValidatingWebhookConfigHelper(
 	// only if the webhooks in the current is different from those configured. Only copy the relevant fields
 	// that we want reconciled and ignore everything else, e.g. labels, selectors.
 	updated := current.DeepCopyObject().(*v1beta1.ValidatingWebhookConfiguration)
-	log.Debugf("*********** updated.Webhooks is %v", updated.Webhooks)
 	updated.Webhooks = webhookConfig.Webhooks
 	log.Debugf("*********** after assignment, updated.Webhooks is %v", updated.Webhooks)
 

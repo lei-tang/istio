@@ -42,7 +42,7 @@ var (
 	deserializer  = codecs.UniversalDeserializer()
 
 	requiredLabels = []string{
-		"protovalidate",
+		"must-have-label",
 	}
 )
 

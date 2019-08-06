@@ -93,10 +93,10 @@ var (
 
 	// WebhookServiceNames is service names of the webhooks.
 	WebhookServiceNames = []string{
-		//"protomutate",
-		//"protovalidate",
-		"istio-sidecar-injector",
-		"istio-galley",
+		"protomutate",
+		"protovalidate",
+		//"istio-sidecar-injector",
+		//"istio-galley",
 	}
 
 	// WebhookTypes is the types of the webhooks. Each item corresponds to an item
@@ -116,9 +116,10 @@ var (
 
 // WebhookController manages the service accounts' secrets that contains Istio keys and certificates.
 type WebhookController struct {
-	core       corev1.CoreV1Interface
-	admission  admissionv1.AdmissionregistrationV1beta1Interface
-	certClient certclient.CertificatesV1beta1Interface
+	deleteWebhookConfigurationsOnExit bool
+	core                              corev1.CoreV1Interface
+	admission                         admissionv1.AdmissionregistrationV1beta1Interface
+	certClient                        certclient.CertificatesV1beta1Interface
 
 	minGracePeriod time.Duration
 	// Length of the grace period for the certificate rotation.
@@ -162,7 +163,7 @@ type WebhookController struct {
 }
 
 // NewWebhookController returns a pointer to a newly constructed WebhookController instance.
-func NewWebhookController(gracePeriodRatio float32, minGracePeriod time.Duration,
+func NewWebhookController(deleteWebhookConfigurationsOnExit bool, gracePeriodRatio float32, minGracePeriod time.Duration,
 	core corev1.CoreV1Interface, admission admissionv1.AdmissionregistrationV1beta1Interface,
 	certClient certclient.CertificatesV1beta1Interface, k8sCaCertFile, nameSpace string,
 	mutatingWebhookConfigFiles, mutatingWebhookConfigNames,
@@ -176,17 +177,18 @@ func NewWebhookController(gracePeriodRatio float32, minGracePeriod time.Duration
 	}
 
 	c := &WebhookController{
-		gracePeriodRatio:             gracePeriodRatio,
-		minGracePeriod:               minGracePeriod,
-		k8sCaCertFile:                k8sCaCertFile,
-		core:                         core,
-		admission:                    admission,
-		certClient:                   certClient,
-		namespace:                    nameSpace,
-		mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-		mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
-		validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-		validatingWebhookConfigNames: validatingWebhookConfigNames,
+		deleteWebhookConfigurationsOnExit: deleteWebhookConfigurationsOnExit,
+		gracePeriodRatio:                  gracePeriodRatio,
+		minGracePeriod:                    minGracePeriod,
+		k8sCaCertFile:                     k8sCaCertFile,
+		core:                              core,
+		admission:                         admission,
+		certClient:                        certClient,
+		namespace:                         nameSpace,
+		mutatingWebhookConfigFiles:        mutatingWebhookConfigFiles,
+		mutatingWebhookConfigNames:        mutatingWebhookConfigNames,
+		validatingWebhookConfigFiles:      validatingWebhookConfigFiles,
+		validatingWebhookConfigNames:      validatingWebhookConfigNames,
 	}
 
 	// read CA cert at the beginning of launching the controller and when the CA cert changes.
@@ -239,6 +241,8 @@ func NewWebhookController(gracePeriodRatio float32, minGracePeriod time.Duration
 	log.Debugf("*************** K8sCaCertWatcher is %v", c.K8sCaCertWatcher)
 	log.Debugf("*************** MutatingWebhookFileWatcher is %v", c.MutatingWebhookFileWatcher)
 	log.Debugf("*************** ValidatingWebhookFileWatcher is %v", c.ValidatingWebhookFileWatcher)
+
+	log.Debugf("*************** delete webhoookconfigurations")
 
 	return c, nil
 }
@@ -504,8 +508,9 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 
 		case event := <-wc.MutatingWebhookFileWatcher.Event:
 			log.Debugf("*************** MutatingWebhookFileWatcher.Event is triggered")
-			// use a timer to debounce configuration updates
+			// There is no way to delete a configmap mounted file, so event.IsDelete() is not handled.
 			if (event.IsModify() || event.IsCreate()) && timerMutateWhFile == nil {
+				// use a timer to debounce configuration updates
 				timerMutateWhFile = time.After(watchDebounceDelay)
 			}
 		case err := <-wc.MutatingWebhookFileWatcher.Error:
@@ -513,8 +518,9 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 
 		case event := <-wc.ValidatingWebhookFileWatcher.Event:
 			log.Debugf("*************** ValidatingWebhookFileWatcher.Event is triggered")
-			// use a timer to debounce configuration updates
+			// There is no way to delete a configmap mounted file, so event.IsDelete() is not handled.
 			if (event.IsModify() || event.IsCreate()) && timerValidateWhFile == nil {
+				// use a timer to debounce configuration updates
 				timerValidateWhFile = time.After(watchDebounceDelay)
 			}
 		case err := <-wc.ValidatingWebhookFileWatcher.Error:
@@ -538,6 +544,11 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 			}
 
 		case <-stopCh:
+			if wc.deleteWebhookConfigurationsOnExit {
+				log.Info("deleting the webhookconfigurations upon exit")
+				wc.deleteMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0])
+				wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
+			}
 			return
 		}
 	}
@@ -602,6 +613,36 @@ func (wc *WebhookController) createOrUpdateValidatingWebhookConfig() error {
 	return nil
 }
 
+// Delete the mutatingwebhookconfiguration.
+func (wc *WebhookController) deleteMutatingWebhookConfig(configName string) error {
+	log.Infof("****************** delete mutatingwebhookconfiguration %v", configName)
+
+	client := wc.admission.MutatingWebhookConfigurations()
+	deleteOpt := metav1.DeleteOptions{}
+
+	err := client.Delete(configName, &deleteOpt)
+	if err != nil {
+		log.Debugf("*********** delete mutatingwebhookconfiguration %v returns an err: %v", configName, err)
+		return err
+	}
+	return nil
+}
+
+// Delete the validatingwebhookconfiguration.
+func (wc *WebhookController) deleteValidatingWebhookConfig(configName string) error {
+	log.Infof("****************** delete validatingwebhookconfiguration %v", configName)
+
+	client := wc.admission.ValidatingWebhookConfigurations()
+	deleteOpt := metav1.DeleteOptions{}
+
+	err := client.Delete(configName, &deleteOpt)
+	if err != nil {
+		log.Debugf("*********** delete validatingwebhookconfiguration %v returns an err: %v", configName, err)
+		return err
+	}
+	return nil
+}
+
 func (wc *WebhookController) checkAndCreateMutatingWebhook(host string, port int, stopCh chan struct{}) {
 	log.Debugf("****************** enter checkAndCreateMutatingWebhook()")
 
@@ -620,6 +661,9 @@ func (wc *WebhookController) checkAndCreateMutatingWebhook(host string, port int
 			time.Sleep(2 * time.Second)
 		}
 	}
+
+	// Delete the existing webhookconfiguration, if any.
+	wc.deleteMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0])
 	// Try to create the initial webhook configuration (if it doesn't already exist).
 	err := wc.rebuildMutatingWebhookConfig()
 	if err == nil {
@@ -651,6 +695,9 @@ func (wc *WebhookController) checkAndCreateValidatingWebhook(host string, port i
 			time.Sleep(2 * time.Second)
 		}
 	}
+
+	// Delete the existing webhookconfiguration, if any.
+	wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
 	// Try to create the initial webhook configuration (if it doesn't already exist).
 	err := wc.rebuildValidatingWebhookConfig()
 	if err == nil {
@@ -742,16 +789,12 @@ func (wc *WebhookController) monitorValidatingWebhookConfig(webhookConfigName st
 func (wc *WebhookController) rebuildMutatingWebhookConfig() error {
 	log.Debugf("*********************** enter rebuildMutatingWebhookConfig()")
 
-	if len(wc.mutatingWebhookConfigFiles) == 0 || len(wc.mutatingWebhookConfigNames) == 0 {
-		log.Error("no mutatingwebhook item is found")
-		return fmt.Errorf("no mutatingwebhook item is found")
-	}
-
 	caCert, err := wc.getCACert()
 	if err != nil {
 		return err
 	}
 	// In the prototype, only one mutating webhook is rebuilt
+	// The size of mutatingWebhookConfigFiles and mutatingWebhookConfigNames are checked in main.
 	webhookConfig, err := rebuildMutatingWebhookConfigHelper(
 		caCert,
 		wc.mutatingWebhookConfigFiles[0],
@@ -781,16 +824,13 @@ func (wc *WebhookController) rebuildMutatingWebhookConfig() error {
 // Rebuild the validatingwebhookconfiguration and save it for subsequent calls to createOrUpdateWebhookConfig.
 func (wc *WebhookController) rebuildValidatingWebhookConfig() error {
 	log.Debugf("*********************** enter rebuildValidatingWebhookConfig()")
-	if len(wc.validatingWebhookConfigFiles) == 0 || len(wc.validatingWebhookConfigNames) == 0 {
-		log.Error("no validatingwebhook item is found")
-		return fmt.Errorf("no validatingwebhook item is found")
-	}
 
 	caCert, err := wc.getCACert()
 	if err != nil {
 		return err
 	}
-	// In the prototype, only one validating webhook is rebuilt
+	// In the prototype, only one validating webhook is rebuilt.
+	// The size of validatingWebhookConfigFiles and validatingWebhookConfigNames are checked in main.
 	webhookConfig, err := rebuildValidatingWebhookConfigHelper(
 		caCert,
 		wc.validatingWebhookConfigFiles[0],

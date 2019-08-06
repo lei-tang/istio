@@ -95,6 +95,9 @@ type cliOptions struct {
 
 	// Whether enable the webhook controller
 	enableController bool
+
+	// Whether delete webhookconfigurations upon exit
+	deleteWebhookConfigurationsOnExit bool
 }
 
 func init() {
@@ -102,6 +105,8 @@ func init() {
 
 	flags.BoolVar(&opts.enableController, "enable-controller", false, "Specifies whether enabling "+
 		"Istio Webhook Controller.")
+	flags.BoolVar(&opts.deleteWebhookConfigurationsOnExit, "delete-webhook-configurations-on-exit", false, "Specifies whether deleting "+
+		"webhookconfigurations when Istio Webhook Controller exits.")
 	flags.StringVar(&opts.certificateNamespace, "certificate-namespace", "istio-system",
 		"The namespace of the webhook certificates.")
 
@@ -133,6 +138,7 @@ func init() {
 
 	// Hide the command line options for the prototype
 	_ = flags.MarkHidden("enable-controller")
+	_ = flags.MarkHidden("delete-webhook-configurations-on-exit")
 	_ = flags.MarkHidden("certificate-namespace")
 	_ = flags.MarkHidden("kube-config")
 	_ = flags.MarkHidden("cert-grace-period-ratio")
@@ -190,23 +196,28 @@ func runWebhookController() {
 		log.Error("no validatingwebhookconfiguration files or no mutatingwebhookconfiguration files")
 		os.Exit(1)
 	}
+	if len(mutatingWebhookConfigNames) == 0 || len(validatingWebhookConfigNames) == 0 {
+		log.Error("no validatingwebhookconfiguration names or no mutatingwebhookconfiguration names")
+		os.Exit(1)
+	}
 
 	stopCh := make(chan struct{})
 
-	sc, err := chiron.NewWebhookController(opts.certGracePeriodRatio, opts.certMinGracePeriod,
+	wc, err := chiron.NewWebhookController(opts.deleteWebhookConfigurationsOnExit, opts.certGracePeriodRatio, opts.certMinGracePeriod,
 		k8sClient.CoreV1(), k8sClient.AdmissionregistrationV1beta1(), k8sClient.CertificatesV1beta1(),
 		opts.k8sCaCertFile, opts.certificateNamespace, mutatingWebhookConfigFiles,
 		mutatingWebhookConfigNames, validatingWebhookConfigFiles, validatingWebhookConfigNames)
+
 	if err != nil {
 		log.Errorf("failed to create webhook controller: %v", err)
 		os.Exit(1)
 	}
 
 	// Run the controller to manage the lifecycles of webhook certificates and webhook configurations
-	sc.Run(stopCh)
-	defer sc.K8sCaCertWatcher.Close()
-	defer sc.MutatingWebhookFileWatcher.Close()
-	defer sc.ValidatingWebhookFileWatcher.Close()
+	wc.Run(stopCh)
+	defer wc.K8sCaCertWatcher.Close()
+	defer wc.MutatingWebhookFileWatcher.Close()
+	defer wc.ValidatingWebhookFileWatcher.Close()
 
 	istiocmd.WaitSignal(stopCh)
 }
