@@ -27,16 +27,20 @@ func TestNewWebhookController(t *testing.T) {
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 
 	testCases := map[string]struct {
-		deleteWebhookConfigOnExit    bool
-		gracePeriodRatio             float32
-		minGracePeriod               time.Duration
-		k8sCaCertFile                string
-		namespace                    string
-		mutatingWebhookConfigFiles   []string
-		mutatingWebhookConfigNames   []string
-		validatingWebhookConfigFiles []string
-		validatingWebhookConfigNames []string
-		shouldFail                   bool
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookServiceNames   []string
+		mutatingWebhookServicePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+		shouldFail                    bool
 	}{
 		"invalid grade period ratio": {
 			gracePeriodRatio:             1.5,
@@ -79,7 +83,8 @@ func TestNewWebhookController(t *testing.T) {
 		_, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
-			tc.validatingWebhookConfigFiles, tc.validatingWebhookConfigNames)
+			tc.mutatingWebhookServiceNames, tc.mutatingWebhookServicePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
 		if tc.shouldFail {
 			if err == nil {
 				t.Errorf("should have failed at NewWebhookController()")

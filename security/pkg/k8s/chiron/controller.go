@@ -88,32 +88,6 @@ const (
 	watchDebounceDelay = 100 * time.Millisecond
 )
 
-var (
-	// TODO (lei-tang): the secret names, service names, ports may be moved to CLI.
-
-	// WebhookServiceNames is service names of the webhooks.
-	WebhookServiceNames = []string{
-		"protomutate",
-		"protovalidate",
-		//"istio-sidecar-injector",
-		//"istio-galley",
-	}
-
-	// WebhookTypes is the types of the webhooks. Each item corresponds to an item
-	//at the same index in WebhookServiceNames.
-	WebhookTypes = []WebhookType{
-		MutatingWebhook,
-		ValidatingWebhook,
-	}
-
-	// WebhookServicePorts is service ports of the webhooks. Each item corresponds to an item
-	// at the same index in WebhookServiceNames.
-	WebhookServicePorts = []int{
-		443,
-		443,
-	}
-)
-
 // WebhookController manages the service accounts' secrets that contains Istio keys and certificates.
 type WebhookController struct {
 	deleteWebhookConfigurationsOnExit bool
@@ -139,6 +113,10 @@ type WebhookController struct {
 	mutatingWebhookConfigFiles []string
 	// The names of MutatingWebhookConfiguration
 	mutatingWebhookConfigNames []string
+	// The names of the services of mutating webhooks
+	mutatingWebhookServiceNames []string
+	// The ports of the services of mutating webhooks
+	mutatingWebhookServicePorts []int
 	// The configuration of mutating webhook
 	mutatingWebhookConfig *v1beta1.MutatingWebhookConfiguration
 
@@ -146,6 +124,10 @@ type WebhookController struct {
 	validatingWebhookConfigFiles []string
 	// The names of ValidatingWebhookConfiguration
 	validatingWebhookConfigNames []string
+	// The names of the services of validating webhooks
+	validatingWebhookServiceNames []string
+	// The ports of the services of validating webhooks
+	validatingWebhookServicePorts []int
 	// The configuration of validating webhook
 	validatingWebhookConfig *v1beta1.ValidatingWebhookConfiguration
 
@@ -165,8 +147,9 @@ type WebhookController struct {
 func NewWebhookController(deleteWebhookConfigurationsOnExit bool, gracePeriodRatio float32, minGracePeriod time.Duration,
 	core corev1.CoreV1Interface, admission admissionv1.AdmissionregistrationV1beta1Interface,
 	certClient certclient.CertificatesV1beta1Interface, k8sCaCertFile, nameSpace string,
-	mutatingWebhookConfigFiles, mutatingWebhookConfigNames,
-	validatingWebhookConfigFiles, validatingWebhookConfigNames []string) (*WebhookController, error) {
+	mutatingWebhookConfigFiles, mutatingWebhookConfigNames, mutatingWebhookServiceNames []string,
+	mutatingWebhookServicePorts []int, validatingWebhookConfigFiles, validatingWebhookConfigNames,
+	validatingWebhookServiceNames []string, validatingWebhookServicePorts []int) (*WebhookController, error) {
 	if gracePeriodRatio < 0 || gracePeriodRatio > 1 {
 		return nil, fmt.Errorf("grace period ratio %f should be within [0, 1]", gracePeriodRatio)
 	}
@@ -186,8 +169,12 @@ func NewWebhookController(deleteWebhookConfigurationsOnExit bool, gracePeriodRat
 		namespace:                         nameSpace,
 		mutatingWebhookConfigFiles:        mutatingWebhookConfigFiles,
 		mutatingWebhookConfigNames:        mutatingWebhookConfigNames,
+		mutatingWebhookServiceNames:       mutatingWebhookServiceNames,
+		mutatingWebhookServicePorts:       mutatingWebhookServicePorts,
 		validatingWebhookConfigFiles:      validatingWebhookConfigFiles,
 		validatingWebhookConfigNames:      validatingWebhookConfigNames,
+		validatingWebhookServiceNames:     validatingWebhookServiceNames,
+		validatingWebhookServicePorts:     validatingWebhookServicePorts,
 	}
 
 	// read CA cert at the beginning of launching the controller and when the CA cert changes.
@@ -251,32 +238,29 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 	log.Debugf("*************** enter Run() of WebhookController")
 
 	// Create secrets containing certificates for webhooks
-	for _, svcName := range WebhookServiceNames {
+	for _, svcName := range wc.mutatingWebhookServiceNames {
+		wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(svcName), wc.namespace)
+	}
+	for _, svcName := range wc.validatingWebhookServiceNames {
 		wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(svcName), wc.namespace)
 	}
 
 	// Currently, Chiron only patches one mutating webhook and one validating webhook.
-	idxMutate := wc.getMutatingWebhookItemIdx()
 	var mutatingWebhookChangedCh chan struct{}
-	if idxMutate < 0 {
-		log.Warn("no mutatingwebhook item is found")
-	} else {
-		hostMutate := fmt.Sprintf("%s.%s", WebhookServiceNames[idxMutate], wc.namespace)
-		go wc.checkAndCreateMutatingWebhook(hostMutate, WebhookServicePorts[idxMutate], stopCh)
-		// Only the first mutatingWebhookConfigNames is supported
-		mutatingWebhookChangedCh = wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
-	}
+	// Delete the existing webhookconfiguration, if any.
+	wc.deleteMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0])
+	hostMutate := fmt.Sprintf("%s.%s", wc.mutatingWebhookServiceNames[0], wc.namespace)
+	go wc.checkAndCreateMutatingWebhook(hostMutate, wc.mutatingWebhookServicePorts[0], stopCh)
+	// Only the first mutatingWebhookConfigNames is supported
+	mutatingWebhookChangedCh = wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
 
-	idxValidate := wc.getValidatingWebhookItemIdx()
 	var validatingWebhookChangedCh chan struct{}
-	if idxValidate < 0 {
-		log.Warn("no validatingwebhook item is found")
-	} else {
-		hostValidate := fmt.Sprintf("%s.%s", WebhookServiceNames[idxValidate], wc.namespace)
-		go wc.checkAndCreateValidatingWebhook(hostValidate, WebhookServicePorts[idxValidate], stopCh)
-		// Only the first validatingWebhookConfigNames is supported
-		validatingWebhookChangedCh = wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
-	}
+	// Delete the existing webhookconfiguration, if any.
+	wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
+	hostValidate := fmt.Sprintf("%s.%s", wc.validatingWebhookServiceNames[0], wc.namespace)
+	go wc.checkAndCreateValidatingWebhook(hostValidate, wc.validatingWebhookServicePorts[0], stopCh)
+	// Only the first validatingWebhookConfigNames is supported
+	validatingWebhookChangedCh = wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
 
 	// Manage the secrets of webhooks
 	go wc.scrtController.Run(stopCh)
@@ -403,8 +387,10 @@ func (wc *WebhookController) scrtUpdated(oldObj, newObj interface{}) {
 
 	// Refresh the secret if 1) the certificate contained in the secret is about
 	// to expire, or 2) the root certificate in the secret is different than the
-	// one held by the ca (this may happen when the CA is restarted and
+	// one held by the CA (this may happen when the CA is restarted and
 	// a new self-signed CA cert is generated).
+	// The secret will be periodically inspected, so an update to the CA certificate
+	// will eventually lead to the update of workload certificates.
 	caCert, err := wc.getCACert()
 	if err != nil {
 		log.Errorf("failed to get CA certificate: %v", err)
@@ -457,7 +443,12 @@ func (wc *WebhookController) cleanUpCertGen(csrName string) error {
 
 // Return whether the input secret name is a Webhook secret
 func (wc *WebhookController) isWebhookSecret(name, namespace string) bool {
-	for _, n := range WebhookServiceNames {
+	for _, n := range wc.mutatingWebhookServiceNames {
+		if name == wc.getWebhookSecretNameFromSvcname(n) && namespace == wc.namespace {
+			return true
+		}
+	}
+	for _, n := range wc.validatingWebhookServiceNames {
 		if name == wc.getWebhookSecretNameFromSvcname(n) && namespace == wc.namespace {
 			return true
 		}
@@ -562,7 +553,12 @@ func (wc *WebhookController) getCACert() ([]byte, error) {
 
 // Get the service name for the secret. Return the service name and whether it is found.
 func (wc *WebhookController) getServiceName(secretName string) (string, bool) {
-	for _, name := range WebhookServiceNames {
+	for _, name := range wc.mutatingWebhookServiceNames {
+		if wc.getWebhookSecretNameFromSvcname(name) == secretName {
+			return name, true
+		}
+	}
+	for _, name := range wc.validatingWebhookServiceNames {
 		if wc.getWebhookSecretNameFromSvcname(name) == secretName {
 			return name, true
 		}
@@ -653,8 +649,6 @@ func (wc *WebhookController) checkAndCreateMutatingWebhook(host string, port int
 		}
 	}
 
-	// Delete the existing webhookconfiguration, if any.
-	wc.deleteMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0])
 	// Try to create the initial webhook configuration.
 	err := wc.rebuildMutatingWebhookConfig()
 	if err == nil {
@@ -687,8 +681,6 @@ func (wc *WebhookController) checkAndCreateValidatingWebhook(host string, port i
 		}
 	}
 
-	// Delete the existing webhookconfiguration, if any.
-	wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
 	// Try to create the initial webhook configuration.
 	err := wc.rebuildValidatingWebhookConfig()
 	if err == nil {
@@ -846,26 +838,6 @@ func (wc *WebhookController) rebuildValidatingWebhookConfig() error {
 	log.Errorf("error to marshal validatingwebhookconfiguration %v: %v",
 		wc.validatingWebhookConfig.Name, err)
 	return err
-}
-
-// Return the index of the first mutatingwebhook item. If not found, return -1.
-func (wc *WebhookController) getMutatingWebhookItemIdx() int {
-	for i, t := range WebhookTypes {
-		if t == MutatingWebhook {
-			return i
-		}
-	}
-	return -1
-}
-
-// Return the index of the first validatingwebhook item. If not found, return -1.
-func (wc *WebhookController) getValidatingWebhookItemIdx() int {
-	for i, t := range WebhookTypes {
-		if t == ValidatingWebhook {
-			return i
-		}
-	}
-	return -1
 }
 
 // Return the webhook secret name based on the service name

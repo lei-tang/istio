@@ -149,15 +149,19 @@ func TestReloadCACert(t *testing.T) {
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 
 	testCases := map[string]struct {
-		deleteWebhookConfigOnExit    bool
-		gracePeriodRatio             float32
-		minGracePeriod               time.Duration
-		k8sCaCertFile                string
-		namespace                    string
-		mutatingWebhookConfigFiles   []string
-		mutatingWebhookConfigNames   []string
-		validatingWebhookConfigFiles []string
-		validatingWebhookConfigNames []string
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
 
 		expectReloadingFail bool
 		expectChanged       bool
@@ -177,7 +181,8 @@ func TestReloadCACert(t *testing.T) {
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
-			tc.validatingWebhookConfigFiles, tc.validatingWebhookConfigNames)
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
 		if err != nil {
 			t.Errorf("failed at creating webhook controller: %v", err)
 			continue

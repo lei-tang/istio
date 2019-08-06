@@ -17,6 +17,7 @@ package main
 import (
 	"io/ioutil"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -77,9 +78,21 @@ type cliOptions struct {
 	// The names of the MutatingWebhookConfiguration to manage
 	// In prototype, only one is supported.
 	mutatingWebhookConfigNames string
+	// The names of the services of mutating webhooks to manage
+	// In prototype, only one is supported.
+	mutatingWebhookServiceNames string
+	// The ports of the services of mutating webhooks to manage
+	// In prototype, only one is supported.
+	mutatingWebhookServicePorts string
 	// The names of the valitatingWebhookConfiguration to manage
 	// In prototype, only one is supported.
 	validatingWebhookConfigNames string
+	// The names of the services of validating webhooks to manage
+	// In prototype, only one is supported.
+	validatingWebhookServiceNames string
+	// The ports of the services of validating webhooks to manage
+	// In prototype, only one is supported.
+	validatingWebhookServicePorts string
 
 	// The minimum grace period for cert rotation.
 	certMinGracePeriod time.Duration
@@ -127,14 +140,21 @@ func init() {
 	flags.DurationVar(&opts.certMinGracePeriod, "cert-min-grace-period",
 		cmd.DefaultWorkloadMinCertGracePeriod, "The minimum certificate rotation grace period.")
 
-	// MutatingWebhook configuration
 	flags.StringVar(&opts.webhookConfigFiles, "webhook-config-files", "/etc/protovalidate-webhook-config/validatingwebhookconfiguration.yaml,/etc/protomutate-webhook-config/mutatingwebhookconfiguration.yaml",
 		"The file paths of the webhookconfigurations, separated by comma. "+
 			"Only one mutatingwebhookconfiguration file and one validatingwebhookconfiguration are supported.")
 	flags.StringVar(&opts.mutatingWebhookConfigNames, "mutating-webhook-config-names", "istio-sidecar-injector",
 		"The names of the mutatingwebhookconfiguration resources in Kubernetes, separated by comma. Currently, Chiron will only manage the first one.")
+	flags.StringVar(&opts.mutatingWebhookServiceNames, "mutating-webhook-service-names", "istio-sidecar-injector",
+		"The names of the services of mutating webhooks, separated by comma. Currently, Chiron will only manage the first one.")
+	flags.StringVar(&opts.mutatingWebhookServicePorts, "mutating-webhook-service-ports", "443",
+		"The ports of the services of mutating webhooks, separated by comma. Currently, Chiron will only manage the first one.")
 	flags.StringVar(&opts.validatingWebhookConfigNames, "validating-webhook-config-names", "istio-galley",
 		"The names of the validatingwebhookconfiguration resources in Kubernetes, separated by comma. Currently, Chiron will only manage the first one.")
+	flags.StringVar(&opts.validatingWebhookServiceNames, "validating-webhook-service-names", "istio-galley",
+		"The names of the services of validating webhooks, separated by comma. Currently, Chiron will only manage the first one.")
+	flags.StringVar(&opts.validatingWebhookServicePorts, "validating-webhook-service-ports", "443",
+		"The ports of the services of validating webhooks, separated by comma. Currently, Chiron will only manage the first one.")
 
 	// Hide the command line options for the prototype
 	_ = flags.MarkHidden("enable-controller")
@@ -145,7 +165,11 @@ func init() {
 	_ = flags.MarkHidden("cert-min-grace-period")
 	_ = flags.MarkHidden("webhook-config-files")
 	_ = flags.MarkHidden("mutating-webhook-config-names")
+	_ = flags.MarkHidden("mutating-webhook-service-names")
+	_ = flags.MarkHidden("mutating-webhook-service-ports")
 	_ = flags.MarkHidden("validating-webhook-config-names")
+	_ = flags.MarkHidden("validating-webhook-service-names")
+	_ = flags.MarkHidden("validating-webhook-service-ports")
 
 	rootCmd.AddCommand(version.CobraCommand())
 	rootCmd.AddCommand(collateral.CobraCommand(rootCmd, &doc.GenManHeader{
@@ -182,7 +206,11 @@ func runWebhookController() {
 
 	webhookConfigFiles := strings.Split(opts.webhookConfigFiles, ",")
 	mutatingWebhookConfigNames := strings.Split(opts.mutatingWebhookConfigNames, ",")
+	mutatingWebhookServiceNames := strings.Split(opts.mutatingWebhookServiceNames, ",")
+	mutatingWebhookServicePorts := strings.Split(opts.mutatingWebhookServicePorts, ",")
 	validatingWebhookConfigNames := strings.Split(opts.validatingWebhookConfigNames, ",")
+	validatingWebhookServiceNames := strings.Split(opts.validatingWebhookServiceNames, ",")
+	validatingWebhookServicePorts := strings.Split(opts.validatingWebhookServicePorts, ",")
 
 	var mutatingWebhookConfigFiles, validatingWebhookConfigFiles []string
 	for _, fileName := range webhookConfigFiles {
@@ -200,13 +228,44 @@ func runWebhookController() {
 		log.Error("no validatingwebhookconfiguration names or no mutatingwebhookconfiguration names")
 		os.Exit(1)
 	}
+	if len(mutatingWebhookConfigNames) != len(mutatingWebhookServiceNames) ||
+		len(mutatingWebhookConfigNames) != len(mutatingWebhookServicePorts) {
+		log.Error("the mutating webhook config names must be 1-to-1 mapped to the service names and service ports")
+		os.Exit(1)
+	}
+	if len(validatingWebhookConfigNames) != len(validatingWebhookServiceNames) ||
+		len(validatingWebhookConfigNames) != len(validatingWebhookServicePorts) {
+		log.Error("the validating webhook config names must be 1-to-1 mapped to the service names and service ports")
+		os.Exit(1)
+	}
+
+	// convert the port number to int
+	var mutatingSvcPorts = []int{}
+	var validatingSvcPorts = []int{}
+	for _, p := range mutatingWebhookServicePorts {
+		port, err := strconv.Atoi(p)
+		if err != nil {
+			log.Errorf("the mutating webhook port number is invalid: %v", err)
+			os.Exit(1)
+		}
+		mutatingSvcPorts = append(mutatingSvcPorts, port)
+	}
+	for _, p := range validatingWebhookServicePorts {
+		port, err := strconv.Atoi(p)
+		if err != nil {
+			log.Errorf("the validating webhook port number is invalid: %v", err)
+			os.Exit(1)
+		}
+		validatingSvcPorts = append(validatingSvcPorts, port)
+	}
 
 	stopCh := make(chan struct{})
 
 	wc, err := chiron.NewWebhookController(opts.deleteWebhookConfigurationsOnExit, opts.certGracePeriodRatio, opts.certMinGracePeriod,
 		k8sClient.CoreV1(), k8sClient.AdmissionregistrationV1beta1(), k8sClient.CertificatesV1beta1(),
-		opts.k8sCaCertFile, opts.certificateNamespace, mutatingWebhookConfigFiles,
-		mutatingWebhookConfigNames, validatingWebhookConfigFiles, validatingWebhookConfigNames)
+		opts.k8sCaCertFile, opts.certificateNamespace, mutatingWebhookConfigFiles, mutatingWebhookConfigNames,
+		mutatingWebhookServiceNames, mutatingSvcPorts, validatingWebhookConfigFiles, validatingWebhookConfigNames,
+		validatingWebhookServiceNames, validatingSvcPorts)
 
 	if err != nil {
 		log.Errorf("failed to create webhook controller: %v", err)

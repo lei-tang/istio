@@ -439,7 +439,10 @@ func updateCertAndWebhookConfig(wc *WebhookController) {
 	}
 	log.Debug("CA cert changed, update webhook certs and webhook configuration")
 	// Update the webhook certificates
-	for _, name := range WebhookServiceNames {
+	for _, name := range wc.mutatingWebhookServiceNames {
+		wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(name), wc.namespace)
+	}
+	for _, name := range wc.validatingWebhookServiceNames {
 		wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(name), wc.namespace)
 	}
 
