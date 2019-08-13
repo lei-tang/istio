@@ -90,25 +90,6 @@ const (
 
 // WebhookController manages the service accounts' secrets that contains Istio keys and certificates.
 type WebhookController struct {
-	deleteWebhookConfigurationsOnExit bool
-	core                              corev1.CoreV1Interface
-	admission                         admissionv1.AdmissionregistrationV1beta1Interface
-	certClient                        certclient.CertificatesV1beta1Interface
-
-	minGracePeriod time.Duration
-	// Length of the grace period for the certificate rotation.
-	gracePeriodRatio float32
-
-	// Controller and store for secret objects.
-	scrtController cache.Controller
-	scrtStore      cache.Store
-
-	// The file path to the k8s CA certificate
-	k8sCaCertFile string
-
-	// The namespace of the webhook certificates
-	namespace string
-
 	// The file paths of MutatingWebhookConfiguration
 	mutatingWebhookConfigFiles []string
 	// The names of MutatingWebhookConfiguration
@@ -117,9 +98,6 @@ type WebhookController struct {
 	mutatingWebhookServiceNames []string
 	// The ports of the services of mutating webhooks
 	mutatingWebhookServicePorts []int
-	// The configuration of mutating webhook
-	mutatingWebhookConfig *v1beta1.MutatingWebhookConfiguration
-
 	// The file paths of ValidatingWebhookConfiguration
 	validatingWebhookConfigFiles []string
 	// The names of ValidatingWebhookConfiguration
@@ -128,19 +106,34 @@ type WebhookController struct {
 	validatingWebhookServiceNames []string
 	// The ports of the services of validating webhooks
 	validatingWebhookServicePorts []int
+
+	// Current CA certificate
+	CACert     []byte
+	core       corev1.CoreV1Interface
+	admission  admissionv1.AdmissionregistrationV1beta1Interface
+	certClient certclient.CertificatesV1beta1Interface
+	// Controller and store for secret objects.
+	scrtController cache.Controller
+	scrtStore      cache.Store
+	// The file path to the k8s CA certificate
+	k8sCaCertFile string
+	// The namespace of the webhook certificates
+	namespace      string
+	minGracePeriod time.Duration
+	// The configuration of mutating webhook
+	mutatingWebhookConfig *v1beta1.MutatingWebhookConfiguration
 	// The configuration of validating webhook
 	validatingWebhookConfig *v1beta1.ValidatingWebhookConfiguration
-
 	// Watcher for the k8s CA cert file
 	K8sCaCertWatcher *fsnotify.Watcher
 	// Watcher for the mutatingwebhook config file
 	MutatingWebhookFileWatcher *fsnotify.Watcher
 	// Watcher for the validatingwebhook config file
 	ValidatingWebhookFileWatcher *fsnotify.Watcher
-
-	// Current CA certificate
-	CACert    []byte
-	certMutex sync.RWMutex
+	certMutex                    sync.RWMutex
+	// Length of the grace period for the certificate rotation.
+	gracePeriodRatio                  float32
+	deleteWebhookConfigurationsOnExit bool
 }
 
 // NewWebhookController returns a pointer to a newly constructed WebhookController instance.
@@ -214,7 +207,7 @@ func NewWebhookController(deleteWebhookConfigurationsOnExit bool, gracePeriodRat
 	// which are ConfigMap file mounts.
 	// In the prototype, only the first webhookconfiguration is watched.
 	files := []string{k8sCaCertFile, mutatingWebhookConfigFiles[0], validatingWebhookConfigFiles[0]}
-	for i, _ := range watchers {
+	for i := range watchers {
 		*watchers[i], err = fsnotify.NewWatcher()
 		if err != nil {
 			return nil, err
@@ -248,7 +241,11 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 	// Currently, Chiron only patches one mutating webhook and one validating webhook.
 	var mutatingWebhookChangedCh chan struct{}
 	// Delete the existing webhookconfiguration, if any.
-	wc.deleteMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0])
+	err := wc.deleteMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0])
+	if err != nil {
+		log.Infof("deleting mutating webhook config %v returns: %v",
+			wc.mutatingWebhookConfigNames[0], err)
+	}
 	hostMutate := fmt.Sprintf("%s.%s", wc.mutatingWebhookServiceNames[0], wc.namespace)
 	go wc.checkAndCreateMutatingWebhook(hostMutate, wc.mutatingWebhookServicePorts[0], stopCh)
 	// Only the first mutatingWebhookConfigNames is supported
@@ -256,7 +253,12 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 
 	var validatingWebhookChangedCh chan struct{}
 	// Delete the existing webhookconfiguration, if any.
-	wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
+	err = wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
+	if err != nil {
+		log.Infof("deleting validatingwebhook config %v returns: %v",
+			wc.validatingWebhookConfigNames[0], err)
+	}
+
 	hostValidate := fmt.Sprintf("%s.%s", wc.validatingWebhookServiceNames[0], wc.namespace)
 	go wc.checkAndCreateValidatingWebhook(hostValidate, wc.validatingWebhookServicePorts[0], stopCh)
 	// Only the first validatingWebhookConfigNames is supported
@@ -622,9 +624,9 @@ func (wc *WebhookController) checkAndCreateMutatingWebhook(host string, port int
 		if createErr != nil {
 			log.Errorf("error when creating or updating muatingwebhookconfiguration: %v", createErr)
 			return
-		} else {
-			log.Errorf("error when rebuilding mutatingwebhookconfiguration: %v", err)
 		}
+	} else {
+		log.Errorf("error when rebuilding mutatingwebhookconfiguration: %v", err)
 	}
 }
 
@@ -656,7 +658,7 @@ func (wc *WebhookController) checkAndCreateValidatingWebhook(host string, port i
 			return
 		}
 	} else {
-		log.Errorf("error when rebuilding mutatingwebhookconfiguration: %v", err)
+		log.Errorf("error when rebuilding validatingwebhookconfiguration: %v", err)
 	}
 }
 

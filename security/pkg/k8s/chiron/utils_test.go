@@ -270,72 +270,6 @@ func TestRebuildValidatingWebhookConfigHelper(t *testing.T) {
 	}
 }
 
-func TestReloadCACert(t *testing.T) {
-	client := fake.NewSimpleClientset()
-	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
-	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
-
-	testCases := map[string]struct {
-		deleteWebhookConfigOnExit     bool
-		gracePeriodRatio              float32
-		minGracePeriod                time.Duration
-		k8sCaCertFile                 string
-		namespace                     string
-		mutatingWebhookConfigFiles    []string
-		mutatingWebhookConfigNames    []string
-		mutatingWebhookSerivceNames   []string
-		mutatingWebhookSerivcePorts   []int
-		validatingWebhookConfigFiles  []string
-		validatingWebhookConfigNames  []string
-		validatingWebhookServiceNames []string
-		validatingWebhookServicePorts []int
-
-		expectFaill   bool
-		expectChanged bool
-	}{
-		"reload from valid CA cert path": {
-			deleteWebhookConfigOnExit:    false,
-			gracePeriodRatio:             0.6,
-			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
-			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-			expectFaill:                  false,
-			expectChanged:                false,
-		},
-	}
-
-	for _, tc := range testCases {
-		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
-			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
-			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
-			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
-			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
-		if err != nil {
-			t.Errorf("failed at creating webhook controller: %v", err)
-			continue
-		}
-		changed, err := reloadCACert(wc)
-		if tc.expectFaill {
-			if err == nil {
-				t.Errorf("should have failed at reloading CA cert")
-			}
-			continue
-		} else if err != nil {
-			t.Errorf("failed at reloading CA cert: %v", err)
-			continue
-		}
-		if tc.expectChanged {
-			if !changed {
-				t.Error("expect changed but not changed")
-			}
-		} else {
-			if changed {
-				t.Error("expect unchanged but changed")
-			}
-		}
-	}
-}
-
 func TestCreateOrUpdateMutatingWebhookConfig(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	emptyMutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
@@ -522,6 +456,77 @@ func TestCreateOrUpdateValidatingWebhookConfig(t *testing.T) {
 	}
 }
 
+func TestUpdateMutatingWebhookConfig(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	emptyMutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
+	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
+	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
+	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+
+		expectFaill bool
+	}{
+		"emtpy mutatingwebhookconfiguration should succeed": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:   emptyMutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			expectFaill:                  false,
+		},
+		"non-emtpy mutatingwebhookconfiguration should succeed": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			expectFaill:                  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if err != nil {
+			t.Errorf("failed at creating webhook controller: %v", err)
+			continue
+		}
+
+		err = updateMutatingWebhookConfig(wc)
+		if tc.expectFaill {
+			if err == nil {
+				t.Errorf("should have failed at updateMutatingWebhookConfig")
+			}
+			continue
+		} else if err != nil {
+			t.Errorf("failed at updateMutatingWebhookConfig: %v", err)
+			continue
+		}
+	}
+}
+
 func TestUpdateValidatingWebhookConfig(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	emptyValidatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
@@ -593,13 +598,10 @@ func TestUpdateValidatingWebhookConfig(t *testing.T) {
 	}
 }
 
-func TestUpdateMutatingWebhookConfig(t *testing.T) {
+func TestReloadCACert(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	emptyMutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
-	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
+	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
-	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
-	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
 
 	testCases := map[string]struct {
 		deleteWebhookConfigOnExit     bool
@@ -616,27 +618,17 @@ func TestUpdateMutatingWebhookConfig(t *testing.T) {
 		validatingWebhookServiceNames []string
 		validatingWebhookServicePorts []int
 
-		expectFaill bool
+		expectFaill   bool
+		expectChanged bool
 	}{
-		"emtpy mutatingwebhookconfiguration should succeed": {
-			deleteWebhookConfigOnExit:    false,
-			gracePeriodRatio:             0.6,
-			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
-			mutatingWebhookConfigFiles:   emptyMutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
-			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-			validatingWebhookConfigNames: validatingWebhookConfigNames,
-			expectFaill:                  false,
-		},
-		"non-emtpy mutatingwebhookconfiguration should succeed": {
+		"reload from valid CA cert path": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
 			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
 			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-			validatingWebhookConfigNames: validatingWebhookConfigNames,
 			expectFaill:                  false,
+			expectChanged:                false,
 		},
 	}
 
@@ -650,16 +642,24 @@ func TestUpdateMutatingWebhookConfig(t *testing.T) {
 			t.Errorf("failed at creating webhook controller: %v", err)
 			continue
 		}
-
-		err = updateMutatingWebhookConfig(wc)
+		changed, err := reloadCACert(wc)
 		if tc.expectFaill {
 			if err == nil {
-				t.Errorf("should have failed at updateMutatingWebhookConfig")
+				t.Errorf("should have failed at reloading CA cert")
 			}
 			continue
 		} else if err != nil {
-			t.Errorf("failed at updateMutatingWebhookConfig: %v", err)
+			t.Errorf("failed at reloading CA cert: %v", err)
 			continue
+		}
+		if tc.expectChanged {
+			if !changed {
+				t.Error("expect changed but not changed")
+			}
+		} else {
+			if changed {
+				t.Error("expect unchanged but changed")
+			}
 		}
 	}
 }
