@@ -29,8 +29,7 @@ import (
 	certificates "k8s.io/api/certificates/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	fakecerts "k8s.io/client-go/kubernetes/typed/certificates/v1beta1/fake"
-	k8stesting "k8s.io/client-go/testing"
+	kt "k8s.io/client-go/testing"
 )
 
 const (
@@ -84,8 +83,8 @@ type mockTLSServer struct {
 	httpServer *httptest.Server
 }
 
-func defaultReactionFunc(obj runtime.Object) k8stesting.ReactionFunc {
-	return func(act k8stesting.Action) (bool, runtime.Object, error) {
+func defaultReactionFunc(obj runtime.Object) kt.ReactionFunc {
+	return func(act kt.Action) (bool, runtime.Object, error) {
 		return true, obj, nil
 	}
 }
@@ -97,7 +96,6 @@ func TestGenKeyCertK8sCA(t *testing.T) {
 	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
 
 	client := fake.NewSimpleClientset()
-
 	csr := &certificates.CertificateSigningRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "domain-cluster.local-ns--secret-mock-secret",
@@ -106,10 +104,7 @@ func TestGenKeyCertK8sCA(t *testing.T) {
 			Certificate: []byte(exampleIssuedCert),
 		},
 	}
-	certClient := &fakecerts.FakeCertificatesV1beta1{
-		Fake: &k8stesting.Fake{},
-	}
-	certClient.AddReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
+	client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
 
 	testCases := map[string]struct {
 		deleteWebhookConfigOnExit     bool
@@ -149,8 +144,7 @@ func TestGenKeyCertK8sCA(t *testing.T) {
 
 	for _, tc := range testCases {
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
-			//client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
-			client.CoreV1(), client.AdmissionregistrationV1beta1(), certClient,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
 			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
 			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
