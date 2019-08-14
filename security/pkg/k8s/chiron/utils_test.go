@@ -598,6 +598,121 @@ func TestUpdateValidatingWebhookConfig(t *testing.T) {
 	}
 }
 
+func TestUpdateCertAndWebhookConfig(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
+	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
+	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		newK8sCaCertFile              string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+
+		expectFaill                 bool
+		expectEmptyMutateCABundle   bool
+		expectEmptyValidateCABundle bool
+	}{
+		"same CA certificates should succeed": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			newK8sCaCertFile:             "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			expectFaill:                  false,
+			expectEmptyMutateCABundle:    true,
+			expectEmptyValidateCABundle:  true,
+		},
+		"change to invalid CA certificate should fail": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			newK8sCaCertFile:             "./invalid-path/invalid",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			expectFaill:                  true,
+			expectEmptyMutateCABundle:    true,
+			expectEmptyValidateCABundle:  true,
+		},
+		"change to valid CA certificate should succeed": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert2.pem",
+			newK8sCaCertFile:             "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			expectFaill:                  false,
+			expectEmptyMutateCABundle:    true,
+			expectEmptyValidateCABundle:  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if err != nil {
+			t.Errorf("failed at creating webhook controller: %v", err)
+			continue
+		}
+
+		// Change the CA certificate
+		wc.k8sCaCertFile = tc.newK8sCaCertFile
+		err = updateCertAndWebhookConfig(wc)
+		if tc.expectFaill {
+			if err == nil {
+				t.Errorf("should have failed at updateCertAndWebhookConfig")
+			}
+			continue
+		} else if err != nil {
+			t.Errorf("failed at updateCertAndWebhookConfig: %v", err)
+			continue
+		}
+
+		if tc.expectEmptyMutateCABundle {
+			if wc.mutatingWebhookConfig != nil &&
+				len(wc.mutatingWebhookConfig.Webhooks) > 0 &&
+				len(wc.mutatingWebhookConfig.Webhooks[0].ClientConfig.CABundle) > 0 {
+				t.Error("CA bundle of mutating webhook is unexpected: should be empty")
+			}
+		} else if wc.mutatingWebhookConfig == nil || len(wc.mutatingWebhookConfig.Webhooks) == 0 ||
+			len(wc.mutatingWebhookConfig.Webhooks[0].ClientConfig.CABundle) == 0 {
+			t.Error("CA bundle of mutating webhook is unexpected: should be non-empty")
+		}
+
+		if tc.expectEmptyValidateCABundle {
+			if wc.validatingWebhookConfig != nil && len(wc.validatingWebhookConfig.Webhooks) > 0 &&
+				len(wc.validatingWebhookConfig.Webhooks[0].ClientConfig.CABundle) > 0 {
+				t.Error("CA bundle of validating webhook is unexpected: should be empty")
+			}
+		} else if wc.validatingWebhookConfig == nil || len(wc.validatingWebhookConfig.Webhooks) == 0 ||
+			len(wc.validatingWebhookConfig.Webhooks[0].ClientConfig.CABundle) == 0 {
+			t.Error("CA bundle of validating webhook is unexpected: should be non-empty")
+		}
+	}
+}
+
 func TestReloadCACert(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}

@@ -430,37 +430,56 @@ func updateValidatingWebhookConfig(wc *WebhookController) error {
 }
 
 // Update the CA certificate and webhookconfiguration
-func updateCertAndWebhookConfig(wc *WebhookController) {
+func updateCertAndWebhookConfig(wc *WebhookController) error {
 	certChanged, err := reloadCACert(wc)
 	if err != nil || !certChanged {
 		// No certificate change
-		return
+		return err
 	}
 	log.Debug("CA cert changed, update webhook certs and webhook configuration")
 	// Update the webhook certificates
 	for _, name := range wc.mutatingWebhookServiceNames {
-		wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(name), wc.namespace)
+		err := wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(name), wc.namespace)
+		if err != nil {
+			log.Errorf("error returns when updating the secret for mutating webhook service (%v) in namespace (%v)",
+				name, wc.namespace)
+		}
 	}
 	for _, name := range wc.validatingWebhookServiceNames {
-		wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(name), wc.namespace)
+		err := wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(name), wc.namespace)
+		if err != nil {
+			log.Errorf("error returns when updating the secret for validating webhook service (%v) in namespace (%v)",
+				name, wc.namespace)
+		}
 	}
 
+	var errMutate, errValidate, errUpdateMutate, errUpdateValidate error
 	// Rebuild the webhook configuration and reconcile with the
 	// existing mutatingwebhookconfiguration.
-	if err := wc.rebuildMutatingWebhookConfig(); err == nil {
-		updateErr := createOrUpdateMutatingWebhookConfig(wc)
-		if updateErr != nil {
-			log.Errorf("error when updating mutatingwebhookconfiguration: %v", updateErr)
+	if errMutate = wc.rebuildMutatingWebhookConfig(); errMutate == nil {
+		errUpdateMutate = createOrUpdateMutatingWebhookConfig(wc)
+		if errUpdateMutate != nil {
+			log.Errorf("error when updating mutatingwebhookconfiguration: %v", errUpdateMutate)
 		}
 	}
 	// Rebuild the webhook configuration and reconcile with the
 	// existing mutatingwebhookconfiguration.
-	if err := wc.rebuildValidatingWebhookConfig(); err == nil {
-		updateErr := createOrUpdateValidatingWebhookConfig(wc)
-		if updateErr != nil {
-			log.Errorf("error when updating validatingwebhookconfiguration: %v", updateErr)
+	if errValidate = wc.rebuildValidatingWebhookConfig(); errValidate == nil {
+		errUpdateValidate = createOrUpdateValidatingWebhookConfig(wc)
+		if errUpdateValidate != nil {
+			log.Errorf("error when updating validatingwebhookconfiguration: %v", errUpdateValidate)
 		}
 	}
+
+	if errMutate != nil || errValidate != nil || errUpdateMutate != nil || errUpdateValidate != nil {
+		log.Errorf("err mutate: %v. err validate: %v."+
+			"err update mutate: %v. err update validate: %v", errMutate, errValidate,
+			errUpdateMutate, errUpdateValidate)
+		return fmt.Errorf("err mutate: %v. err validate: %v."+
+			"err update mutate: %v. err update validate: %v", errMutate, errValidate,
+			errUpdateMutate, errUpdateValidate)
+	}
+	return nil
 }
 
 // Reload CA cert from file and return whether CA cert is changed

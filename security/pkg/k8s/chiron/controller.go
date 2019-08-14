@@ -275,7 +275,7 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 	go wc.watchConfigChanges(mutatingWebhookChangedCh, validatingWebhookChangedCh, stopCh)
 }
 
-func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) {
+func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) error {
 	secret := ca.BuildSecretFromSecretName(secretName, secretNamespace, nil, nil, nil, nil, nil, IstioSecretType)
 
 	log.Debugf("********** upsertSecret() searches for the secret (%v) to insert", secret)
@@ -284,7 +284,7 @@ func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) {
 		log.Debugf("********** upsertSecret(): the secret (%v) in namespace (%v) exists, return",
 			secretName, secretNamespace)
 		// Do nothing for existing secrets. Rotating expiring certs are handled by the `scrtUpdated` method.
-		return
+		return nil
 	}
 
 	log.Debugf("********** upsertSecret(): the secret (%v) in namespace (%v) does not exist, creat it.",
@@ -293,7 +293,7 @@ func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) {
 	svcName, found := wc.getServiceName(secretName)
 	if !found {
 		log.Errorf("failed to find the service name for the secret (%v) to insert", secretName)
-		return
+		return fmt.Errorf("failed to find the service name for the secret (%v) to insert", secretName)
 	}
 
 	// Now we know the secret does not exist yet. So we create a new one.
@@ -301,7 +301,7 @@ func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) {
 	if err != nil {
 		log.Errorf("failed to generate key and certificate for secret %v in namespace %v (error %v)",
 			secretName, secretNamespace, err)
-		return
+		return err
 	}
 	secret.Data = map[string][]byte{
 		CertChainID:  chain,
@@ -318,18 +318,19 @@ func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) {
 			}
 			break
 		} else {
-			log.Errorf("Failed to create secret in attempt %v/%v, (error: %s)", i+1, secretCreationRetry, err)
+			log.Errorf("failed to create secret in attempt %v/%v, (error: %s)", i+1, secretCreationRetry, err)
 		}
 		time.Sleep(time.Second)
 	}
 
 	if err != nil && !errors.IsAlreadyExists(err) {
-		log.Errorf("Failed to create secret \"%s\" in namespace \"%s\" (error: %s), retries %v times",
+		log.Errorf("failed to create secret \"%s\" in namespace \"%s\" (error: %s), retries %v times",
 			secretName, secretNamespace, err, secretCreationRetry)
-		return
+		return err
 	}
 
 	log.Infof("Istio secret \"%s\" in namespace \"%s\" has been created", secretName, secretNamespace)
+	return nil
 }
 
 func (wc *WebhookController) scrtDeleted(obj interface{}) {
@@ -342,8 +343,12 @@ func (wc *WebhookController) scrtDeleted(obj interface{}) {
 
 	scrtName := scrt.Name
 	if wc.isWebhookSecret(scrtName, scrt.GetNamespace()) {
-		log.Errorf("Re-create deleted Istio secret for existing secret %s in namespace %s", scrtName, scrt.GetNamespace())
-		wc.upsertSecret(scrtName, scrt.GetNamespace())
+		log.Infof("Re-create deleted Istio secret %s in namespace %s", scrtName, scrt.GetNamespace())
+		err := wc.upsertSecret(scrtName, scrt.GetNamespace())
+		if err != nil {
+			log.Errorf("Re-create deleted Istio secret %s in namespace %s failed: %v",
+				scrtName, scrt.GetNamespace(), err)
+		}
 	}
 }
 

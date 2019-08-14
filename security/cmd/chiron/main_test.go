@@ -50,7 +50,7 @@ func TestIsMutatingWebhookConfiguration(t *testing.T) {
 				continue
 			}
 		} else if err != nil {
-			t.Errorf("failed at isMutatingWebhookConfiguration(): %v", err)
+			t.Errorf("should not fail at isMutatingWebhookConfiguration(), err: %v", err)
 		}
 
 		if tc.expectRet != ret {
@@ -91,7 +91,7 @@ func TestIsValidatingWebhookConfiguration(t *testing.T) {
 				continue
 			}
 		} else if err != nil {
-			t.Errorf("failed at isValidatingWebhookConfiguration(): %v", err)
+			t.Errorf("should not fail at isValidatingWebhookConfiguration(), err: %v", err)
 		}
 
 		if tc.expectRet != ret {
