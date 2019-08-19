@@ -39,7 +39,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"istio.io/istio/security/pkg/listwatch"
-	"istio.io/istio/security/pkg/pki/ca"
 	"istio.io/istio/security/pkg/pki/util"
 	"istio.io/pkg/log"
 )
@@ -57,7 +56,7 @@ const (
 	prefixWebhookSecretName = "istio.webhook"
 
 	// The Istio webhook secret annotation type
-	IstioSecretType = "istio.io/webhook-key-and-cert"
+	IstioWebhookSecretType = "istio.io/webhook-key-and-cert"
 
 	// The ID/name for the certificate chain file.
 	CertChainID = "cert-chain.pem"
@@ -178,7 +177,7 @@ func NewWebhookController(deleteWebhookConfigurationsOnExit bool, gracePeriodRat
 
 	namespaces := []string{nameSpace}
 
-	istioSecretSelector := fields.SelectorFromSet(map[string]string{"type": IstioSecretType}).String()
+	istioSecretSelector := fields.SelectorFromSet(map[string]string{"type": IstioWebhookSecretType}).String()
 	scrtLW := listwatch.MultiNamespaceListerWatcher(namespaces, func(namespace string) cache.ListerWatcher {
 		return &cache.ListWatch{
 			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -276,7 +275,15 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 }
 
 func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) error {
-	secret := ca.BuildSecretFromSecretName(secretName, secretNamespace, nil, nil, nil, nil, nil, IstioSecretType)
+	secret := &v1.Secret{
+		Data: map[string][]byte{},
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: nil,
+			Name:        secretName,
+			Namespace:   secretNamespace,
+		},
+		Type: IstioWebhookSecretType,
+	}
 
 	log.Debugf("********** upsertSecret() searches for the secret (%v) to insert", secret)
 	existingSecret, err := wc.core.Secrets(secretNamespace).Get(secretName, metav1.GetOptions{})
