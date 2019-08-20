@@ -231,26 +231,31 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 
 	// Create secrets containing certificates for webhooks
 	for _, svcName := range wc.mutatingWebhookServiceNames {
-		wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(svcName), wc.namespace)
+		err := wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(svcName), wc.namespace)
+		if err != nil {
+			log.Errorf("error when upserting svc (%v) in ns (%v): %v", svcName, wc.namespace, err)
+		}
 	}
 	for _, svcName := range wc.validatingWebhookServiceNames {
-		wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(svcName), wc.namespace)
+		err := wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(svcName), wc.namespace)
+		if err != nil {
+			log.Errorf("error when upserting svc (%v) in ns (%v): %v", svcName, wc.namespace, err)
+		}
 	}
 
 	// Currently, Chiron only patches one mutating webhook and one validating webhook.
-	var mutatingWebhookChangedCh chan struct{}
 	// Delete the existing webhookconfiguration, if any.
 	err := wc.deleteMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0])
 	if err != nil {
 		log.Infof("deleting mutating webhook config %v returns: %v",
 			wc.mutatingWebhookConfigNames[0], err)
 	}
+
 	hostMutate := fmt.Sprintf("%s.%s", wc.mutatingWebhookServiceNames[0], wc.namespace)
 	go wc.checkAndCreateMutatingWebhook(hostMutate, wc.mutatingWebhookServicePorts[0], stopCh)
 	// Only the first mutatingWebhookConfigNames is supported
-	mutatingWebhookChangedCh = wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
+	mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
 
-	var validatingWebhookChangedCh chan struct{}
 	// Delete the existing webhookconfiguration, if any.
 	err = wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
 	if err != nil {
@@ -261,13 +266,14 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 	hostValidate := fmt.Sprintf("%s.%s", wc.validatingWebhookServiceNames[0], wc.namespace)
 	go wc.checkAndCreateValidatingWebhook(hostValidate, wc.validatingWebhookServicePorts[0], stopCh)
 	// Only the first validatingWebhookConfigNames is supported
-	validatingWebhookChangedCh = wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
+	validatingWebhookChangedCh := wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
 
 	// Manage the secrets of webhooks
 	go wc.scrtController.Run(stopCh)
 
 	// upsertSecret to update and insert secret
-	// it throws error if the secret cache is not synchronized, but the secret exists in the system
+	// it throws error if the secret cache is not synchronized, but the secret exists in the system.
+	// Hence waiting for the cache is synced.
 	cache.WaitForCacheSync(stopCh, wc.scrtController.HasSynced)
 
 	// Watch for the CA certificate and webhookconfiguration updates
@@ -483,15 +489,24 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 		case <-timerCert:
 			log.Debugf("************* enter timerCert handler")
 			timerCert = nil
-			updateCertAndWebhookConfig(wc)
+			err := updateCertAndWebhookConfig(wc)
+			if err != nil {
+				log.Errorf("error updating cert and webhook config: %v", err)
+			}
 		case <-timerMutateWhFile:
 			log.Debugf("************* enter timerMutateWhFile handler")
 			timerMutateWhFile = nil
-			updateMutatingWebhookConfig(wc)
+			err := updateMutatingWebhookConfig(wc)
+			if err != nil {
+				log.Errorf("error updating mutating webhook config: %v", err)
+			}
 		case <-timerValidateWhFile:
 			log.Debugf("************* enter timerValidateWhFile handler")
 			timerValidateWhFile = nil
-			updateValidatingWebhookConfig(wc)
+			err := updateValidatingWebhookConfig(wc)
+			if err != nil {
+				log.Errorf("error updating validating webhook config: %v", err)
+			}
 		case event := <-wc.K8sCaCertWatcher.Event:
 			log.Debugf("*************** K8sCaCertWatcher.Event is triggered")
 			// use a timer to debounce configuration updates
@@ -523,6 +538,7 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 
 		case <-mutatingWebhookChangedCh:
 			log.Debugf("******************* mutatingwebhookconfiguration changes detected")
+			fmt.Println("******************* mutatingwebhookconfiguration changes detected")
 			// When mutatingwebhookconfiguration updates, create or update
 			// mutatingwebhookconfiguration based on the config from rebuildMutatingWebhookConfig().
 			updateErr := createOrUpdateMutatingWebhookConfig(wc)
@@ -541,8 +557,14 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 		case <-stopCh:
 			if wc.deleteWebhookConfigurationsOnExit {
 				log.Info("deleting the webhookconfigurations upon exit")
-				wc.deleteMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0])
-				wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
+				err := wc.deleteMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0])
+				if err != nil {
+					log.Errorf("error when deleting mutatingwebhookconfiguration: %v", err)
+				}
+				err = wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
+				if err != nil {
+					log.Errorf("error when deleting validatingwebhookconfiguration: %v", err)
+				}
 			}
 			return
 		}

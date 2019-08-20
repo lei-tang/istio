@@ -307,7 +307,7 @@ func TestCreateOrUpdateMutatingWebhookConfig(t *testing.T) {
 			rebuildConfig:                false,
 			expectFaill:                  true,
 		},
-		"emtpy mutatingwebhookconfiguration should succeed": {
+		"empty mutatingwebhookconfiguration should succeed": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
@@ -318,7 +318,7 @@ func TestCreateOrUpdateMutatingWebhookConfig(t *testing.T) {
 			rebuildConfig:                true,
 			expectFaill:                  false,
 		},
-		"non-emtpy mutatingwebhookconfiguration should succeed": {
+		"non-empty mutatingwebhookconfiguration should succeed": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
@@ -400,7 +400,7 @@ func TestCreateOrUpdateValidatingWebhookConfig(t *testing.T) {
 			rebuildConfig:                false,
 			expectFaill:                  true,
 		},
-		"emtpy mutatingwebhookconfiguration should succeed": {
+		"empty mutatingwebhookconfiguration should succeed": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
@@ -411,7 +411,7 @@ func TestCreateOrUpdateValidatingWebhookConfig(t *testing.T) {
 			rebuildConfig:                true,
 			expectFaill:                  false,
 		},
-		"non-emtpy mutatingwebhookconfiguration should succeed": {
+		"non-empty mutatingwebhookconfiguration should succeed": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
@@ -481,7 +481,7 @@ func TestUpdateMutatingWebhookConfig(t *testing.T) {
 
 		expectFaill bool
 	}{
-		"emtpy mutatingwebhookconfiguration should succeed": {
+		"empty mutatingwebhookconfiguration should succeed": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
@@ -491,7 +491,7 @@ func TestUpdateMutatingWebhookConfig(t *testing.T) {
 			validatingWebhookConfigNames: validatingWebhookConfigNames,
 			expectFaill:                  false,
 		},
-		"non-emtpy mutatingwebhookconfiguration should succeed": {
+		"non-empty mutatingwebhookconfiguration should succeed": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
@@ -552,7 +552,7 @@ func TestUpdateValidatingWebhookConfig(t *testing.T) {
 
 		expectFaill bool
 	}{
-		"emtpy mutatingwebhookconfiguration should succeed": {
+		"empty mutatingwebhookconfiguration should succeed": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
@@ -562,7 +562,7 @@ func TestUpdateValidatingWebhookConfig(t *testing.T) {
 			validatingWebhookConfigNames: validatingWebhookConfigNames,
 			expectFaill:                  false,
 		},
-		"non-emtpy mutatingwebhookconfiguration should succeed": {
+		"non-empty mutatingwebhookconfiguration should succeed": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
