@@ -538,7 +538,7 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 
 		case <-mutatingWebhookChangedCh:
 			log.Debugf("******************* mutatingwebhookconfiguration changes detected")
-			fmt.Println("******************* mutatingwebhookconfiguration changes detected")
+			// fmt.Println("******************* mutatingwebhookconfiguration changes detected")
 			// When mutatingwebhookconfiguration updates, create or update
 			// mutatingwebhookconfiguration based on the config from rebuildMutatingWebhookConfig().
 			updateErr := createOrUpdateMutatingWebhookConfig(wc)
@@ -547,6 +547,7 @@ func (wc *WebhookController) watchConfigChanges(mutatingWebhookChangedCh, valida
 			}
 		case <-validatingWebhookChangedCh:
 			log.Debugf("******************* validatingwebhookconfiguration changes detected")
+			// fmt.Println("******************* validatingwebhookconfiguration changes detected")
 			// When validatingwebhookconfiguration updates, create or update
 			// validatingwebhookconfiguration based on the config from rebuildValidatingWebhookConfig().
 			updateErr := createOrUpdateValidatingWebhookConfig(wc)

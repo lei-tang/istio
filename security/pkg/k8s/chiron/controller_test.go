@@ -16,6 +16,7 @@ package chiron
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"reflect"
 	"testing"
@@ -714,6 +715,182 @@ func TestIsWebhookSecret(t *testing.T) {
 	}
 }
 
+
+func TestWatchConfigChanges_StopChannelDebug(t *testing.T) {
+	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"protomutate"}
+	mutatingWebhookServiceNames := []string{"foo"}
+	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
+	validatingWebhookConfigNames := []string{"protovalidate"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+		scrtName                      string
+	}{
+		"when stop, deleting webhook config should succeed": {
+			deleteWebhookConfigOnExit:    true,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			namespace:                    "foo.ns",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			scrtName:                     "istio.webhook.foo",
+		},
+	}
+
+	client := fake.NewSimpleClientset()
+
+	for _, tc := range testCases {
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if err != nil {
+			t.Fatalf("failed at creating webhook controller: %v", err)
+		}
+
+		//err = wc.rebuildMutatingWebhookConfig()
+		//if err != nil {
+		//	t.Fatalf("failed to rebuild MutatingWebhookConfiguration: %v", err)
+		//}
+		//err = createOrUpdateMutatingWebhookConfig(wc)
+		//if err != nil {
+		//	t.Fatalf("error when creating or updating muatingwebhookconfiguration: %v", err)
+		//}
+		//webhookConfig := wc.mutatingWebhookConfig
+		//whClient := wc.admission.MutatingWebhookConfigurations()
+		//_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
+		//if err != nil {
+		//	t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
+		//}
+
+		//mutatingWebhookChangedCh := make(chan struct{})
+		//validatingWebhookChangedCh := make(chan struct{})
+		// *********** The controllers in the following two lines cause the crash problem.
+		//mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
+		//validatingWebhookChangedCh := wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
+		wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
+		wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
+
+		// Channel signaling watchConfigChanges() completes
+		//done := make(chan bool)
+		//go func() {
+		//	fmt.Println("call watchConfigChanges()")
+		//	wc.watchConfigChanges(mutatingWebhookChangedCh, validatingWebhookChangedCh, stopCh)
+		//	fmt.Println("send done signal.")
+		//	done <- true //watchConfigChanges() completes.
+		//}()
+
+		fmt.Println("send stopCh signal")
+		stopCh <- struct{}{}
+
+		//fmt.Println("wait done signal")
+		//// Wait for watchConfigChanges() to complete
+		//<-done
+		//
+		////After the stopCh signal is handled, the webhook configuration should have been
+		////deleted when deleteWebhookConfigOnExit is true.
+		//_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
+		//if err == nil {
+		//	t.Errorf("the webhook config (%v) should not exist", webhookConfig.Name)
+		//}
+	}
+
+	fmt.Println("wait releasing resources ...")
+	// Wait for the resource is released
+	//time.Sleep(200* time.Millisecond)
+	fmt.Println("exit ...")
+}
+
+
+
+func TestWatchConfigChanges_ExitBySignalStopChannel(t *testing.T) {
+	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"protomutate"}
+	mutatingWebhookServiceNames := []string{"foo"}
+	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
+	validatingWebhookConfigNames := []string{"protovalidate"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+		scrtName                      string
+	}{
+		"when stopCh is signalled, the watcher should exit": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			namespace:                    "foo.ns",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			scrtName:                     "istio.webhook.foo",
+		},
+	}
+
+	client := fake.NewSimpleClientset()
+
+	for _, tc := range testCases {
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if err != nil {
+			t.Fatalf("failed at creating webhook controller: %v", err)
+		}
+
+		mutatingWebhookChangedCh := make(chan struct{})
+		validatingWebhookChangedCh := make(chan struct{})
+
+		// Channel signaling watchConfigChanges() completes
+		done := make(chan bool)
+		go func() {
+			wc.watchConfigChanges(mutatingWebhookChangedCh, validatingWebhookChangedCh, stopCh)
+			done <- true //watchConfigChanges() completes.
+		}()
+
+		// signal stopCh
+		stopCh <- struct{}{}
+
+		// When stopCh is signalled, watchConfigChanges() should exit
+		<-done
+	}
+}
+
 func TestWatchConfigChanges_StopChannel(t *testing.T) {
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
 	mutatingWebhookConfigNames := []string{"protomutate"}
@@ -804,6 +981,8 @@ func TestWatchConfigChanges_StopChannel(t *testing.T) {
 	}
 }
 
+
+
 func TestWatchConfigChanges_MutatingWebhookConfigChannel(t *testing.T) {
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
 	mutatingWebhookConfigNames := []string{"protomutate"}
@@ -886,6 +1065,100 @@ func TestWatchConfigChanges_MutatingWebhookConfigChannel(t *testing.T) {
 			t.Fatalf("error when deleting the webhook config (%v): %v", webhookConfig.Name, err)
 		}
 		mutatingWebhookChangedCh <- struct{}{}
+
+		stopCh <- struct{}{}
+		// Wait for watchConfigChanges() to complete
+		<-done
+
+		_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
+		if err != nil {
+			t.Errorf("the webhook config (%v) should have been recovered: %v", webhookConfig.Name, err)
+		}
+	}
+}
+
+func TestWatchConfigChanges_ValidatingWebhookConfigChannel(t *testing.T) {
+	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"protomutate"}
+	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
+	validatingWebhookConfigNames := []string{"protovalidate"}
+	validatingWebhookServiceNames := []string{"foo"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+		scrtName                      string
+	}{
+		"when validating webhook config changed, the handler watching webhook config should behave correctly": {
+			deleteWebhookConfigOnExit:     false,
+			gracePeriodRatio:              0.6,
+			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
+			namespace:                     "foo.ns",
+			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:    mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
+			validatingWebhookConfigNames:  validatingWebhookConfigNames,
+			validatingWebhookServiceNames: validatingWebhookServiceNames,
+			scrtName:                      "istio.webhook.foo",
+		},
+	}
+
+	client := fake.NewSimpleClientset()
+
+	for _, tc := range testCases {
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if err != nil {
+			t.Fatalf("failed at creating webhook controller: %v", err)
+		}
+
+		err = wc.rebuildValidatingWebhookConfig()
+		if err != nil {
+			t.Fatalf("failed to rebuild ValidatingWebhookConfiguration: %v", err)
+		}
+		err = createOrUpdateValidatingWebhookConfig(wc)
+		if err != nil {
+			t.Fatalf("error when creating or updating validatingwebhookconfiguration: %v", err)
+		}
+		webhookConfig := wc.validatingWebhookConfig
+		whClient := wc.admission.ValidatingWebhookConfigurations()
+		_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
+		}
+
+		mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
+		validatingWebhookChangedCh := wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
+
+		// Channel signaling watchConfigChanges() completes
+		done := make(chan bool)
+		go func() {
+			wc.watchConfigChanges(mutatingWebhookChangedCh, validatingWebhookChangedCh, stopCh)
+			done <- true //watchConfigChanges() completes.
+		}()
+
+		// Delete the webhook configuration, which will be recovered by the handler.
+		err = whClient.Delete(webhookConfig.Name, &metav1.DeleteOptions{})
+		if err != nil {
+			t.Fatalf("error when deleting the webhook config (%v): %v", webhookConfig.Name, err)
+		}
+		validatingWebhookChangedCh <- struct{}{}
 
 		stopCh <- struct{}{}
 		// Wait for watchConfigChanges() to complete
