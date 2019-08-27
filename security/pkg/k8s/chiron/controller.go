@@ -740,7 +740,15 @@ func (wc *WebhookController) monitorMutatingWebhookConfig(webhookConfigName stri
 			},
 		},
 	)
+
 	go controller.Run(stopC)
+
+	// Wait for the caches to be synced before starting workers
+	if ok := cache.WaitForCacheSync(stopC, controller.HasSynced); !ok {
+		fmt.Errorf("failed to wait for caches to sync")
+		return nil
+	}
+
 	return webhookChangedCh
 }
 
@@ -778,6 +786,7 @@ func (wc *WebhookController) monitorValidatingWebhookConfig(webhookConfigName st
 		},
 	)
 	go controller.Run(stopC)
+
 	return webhookChangedCh
 }
 
