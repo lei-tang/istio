@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"istio.io/istio/security/pkg/listwatch"
+        "istio.io/istio/security/pkg/pki/ca"
 	"istio.io/istio/security/pkg/pki/util"
 	"istio.io/pkg/log"
 )
@@ -57,13 +58,6 @@ const (
 
 	// The Istio webhook secret annotation type
 	IstioWebhookSecretType = "istio.io/webhook-key-and-cert"
-
-	// The ID/name for the certificate chain file.
-	CertChainID = "cert-chain.pem"
-	// The ID/name for the private key file.
-	PrivateKeyID = "key.pem"
-	// The ID/name for the CA root certificate file.
-	RootCertID = "root-cert.pem"
 
 	// For debugging, set the resync period to be a shorter period.
 	secretResyncPeriod = 10 * time.Second
@@ -327,9 +321,9 @@ func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) er
 		return err
 	}
 	secret.Data = map[string][]byte{
-		CertChainID:  chain,
-		PrivateKeyID: key,
-		RootCertID:   caCert,
+		ca.CertChainID:  chain,
+		ca.PrivateKeyID: key,
+		ca.RootCertID:   caCert,
 	}
 
 	// We retry several times when create secret to mitigate transient network failures.
@@ -392,7 +386,7 @@ func (wc *WebhookController) scrtUpdated(oldObj, newObj interface{}) {
 		return
 	}
 
-	certBytes := scrt.Data[CertChainID]
+	certBytes := scrt.Data[ca.CertChainID]
 	cert, err := util.ParsePemEncodedCertificate(certBytes)
 	if err != nil {
 		log.Warnf("Failed to parse certificates in secret %s/%s (error: %v), refreshing the secret.",
@@ -426,7 +420,7 @@ func (wc *WebhookController) scrtUpdated(oldObj, newObj interface{}) {
 		log.Errorf("failed to get CA certificate: %v", err)
 		return
 	}
-	if certLifeTimeLeft < gracePeriod || !bytes.Equal(caCert, scrt.Data[RootCertID]) {
+	if certLifeTimeLeft < gracePeriod || !bytes.Equal(caCert, scrt.Data[ca.RootCertID]) {
 		log.Infof("Refreshing secret %s/%s, either the leaf certificate is about to expire "+
 			"or the root certificate is outdated", namespace, name)
 
@@ -451,9 +445,9 @@ func (wc *WebhookController) refreshSecret(scrt *v1.Secret) error {
 		return err
 	}
 
-	scrt.Data[CertChainID] = chain
-	scrt.Data[PrivateKeyID] = key
-	scrt.Data[RootCertID] = caCert
+	scrt.Data[ca.CertChainID] = chain
+	scrt.Data[ca.PrivateKeyID] = key
+	scrt.Data[ca.RootCertID] = caCert
 
 	_, err = wc.core.Secrets(namespace).Update(scrt)
 	return err

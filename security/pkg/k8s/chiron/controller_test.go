@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"istio.io/istio/security/pkg/pki/ca"
 	"reflect"
 	"testing"
 	"time"
@@ -429,10 +430,10 @@ func TestScrtUpdated(t *testing.T) {
 			scrt.Name = tc.newScrtName
 		}
 		if tc.replaceWithExpiredCert {
-			scrt.Data[CertChainID] = []byte(exampleExpiredCert)
+			scrt.Data[ca.CertChainID] = []byte(exampleExpiredCert)
 		}
 		if tc.changeCACert {
-			scrt.Data[RootCertID] = []byte(exampleCACert2)
+			scrt.Data[ca.RootCertID] = []byte(exampleCACert2)
 		}
 
 		var newScrt interface{}
@@ -547,7 +548,7 @@ func TestRefreshSecret(t *testing.T) {
 		}
 
 		if tc.changeCACert {
-			scrt.Data[RootCertID] = []byte(exampleCACert2)
+			scrt.Data[ca.RootCertID] = []byte(exampleCACert2)
 		}
 
 		newScrt := &v1.Secret{}
