@@ -39,7 +39,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"istio.io/istio/security/pkg/listwatch"
-        "istio.io/istio/security/pkg/pki/ca"
+	"istio.io/istio/security/pkg/pki/ca"
 	"istio.io/istio/security/pkg/pki/util"
 	"istio.io/pkg/log"
 )
@@ -699,6 +699,62 @@ func (wc *WebhookController) checkAndCreateValidatingWebhook(host string, port i
 	} else {
 		log.Errorf("error when rebuilding validatingwebhookconfiguration: %v", err)
 	}
+}
+
+// Run an informer that watches the changes of mutatingwebhookconfiguration.
+func (wc *WebhookController) monitorMutatingWebhookConfigDebug(webhookConfigName string, stopC <-chan struct{}) chan struct{} {
+	webhookChangedCh := make(chan struct{}, 1000)
+
+	// webhookconfiguration does not have namespace
+	selector := map[string]string{
+		"metadata.name": webhookConfigName,
+	}
+	fieldSelector := fields.SelectorFromSet(selector).String()
+
+	whLW := &cache.ListWatch{
+		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			options.FieldSelector = fieldSelector
+			return wc.admission.MutatingWebhookConfigurations().List(options)
+		},
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			options.FieldSelector = fieldSelector
+			return wc.admission.MutatingWebhookConfigurations().Watch(options)
+		},
+	}
+
+	_, controller := cache.NewInformer(
+		whLW,
+		&v1beta1.MutatingWebhookConfiguration{},
+		0,
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(_ interface{}) {
+				log.Debugf("************ AddFunc() in monitorMutatingWebhookConfig()")
+				webhookChangedCh <- struct{}{}
+			},
+			UpdateFunc: func(prev, curr interface{}) {
+				log.Debugf("************ UpdateFunc() in monitorMutatingWebhookConfig()")
+				prevObj := prev.(*v1beta1.MutatingWebhookConfiguration)
+				currObj := curr.(*v1beta1.MutatingWebhookConfiguration)
+				if prevObj.ResourceVersion != currObj.ResourceVersion {
+					webhookChangedCh <- struct{}{}
+				}
+			},
+			DeleteFunc: func(_ interface{}) {
+				log.Debugf("************ DeleteFunc() in monitorMutatingWebhookConfig()")
+				webhookChangedCh <- struct{}{}
+			},
+		},
+	)
+
+	go controller.Run(stopC)
+
+	// Wait for the caches to be synced before starting workers
+	if ok := cache.WaitForCacheSync(stopC, controller.HasSynced); !ok {
+		fmt.Errorf("failed to wait for caches to sync")
+		return nil
+	}
+
+	return webhookChangedCh
 }
 
 // Run an informer that watches the changes of mutatingwebhookconfiguration.

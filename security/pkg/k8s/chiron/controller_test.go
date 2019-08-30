@@ -18,10 +18,11 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"istio.io/istio/security/pkg/pki/ca"
 	"reflect"
 	"testing"
 	"time"
+
+	"istio.io/istio/security/pkg/pki/ca"
 
 	"k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -770,9 +771,9 @@ func TestIsWebhookSecret(t *testing.T) {
 	}
 }
 
-func TestMonitorMutatingWebhookConfig(t *testing.T) {
+func TestMonitorMutatingWebhookConfigDebug(t *testing.T) {
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
-	mutatingWebhookConfigNames := []string{"protomutate"}
+	//mutatingWebhookConfigNames := []string{"protomutate"}
 	mutatingWebhookServiceNames := []string{"foo"}
 	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
 	validatingWebhookConfigNames := []string{"protovalidate"}
@@ -792,18 +793,34 @@ func TestMonitorMutatingWebhookConfig(t *testing.T) {
 		validatingWebhookServiceNames []string
 		validatingWebhookServicePorts []int
 		scrtName                      string
+
+		exepceChannelSignalled bool
 	}{
-		"when mutating webhook config changed, the channel should be signalled": {
+		//"when mutating webhook config is created, the channel should be signalled": {
+		//	deleteWebhookConfigOnExit:    false,
+		//	gracePeriodRatio:             0.6,
+		//	k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+		//	namespace:                    "foo.ns",
+		//	mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+		//	mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+		//	mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
+		//	validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+		//	validatingWebhookConfigNames: validatingWebhookConfigNames,
+		//	scrtName:                     "istio.webhook.foo",
+		//	exepceChannelSignalled:       true,
+		//},
+		"when unrelated mutating webhook config is created, the channel should not be signalled": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
 			namespace:                    "foo.ns",
 			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			mutatingWebhookConfigNames:   []string{"unrelated-webhook"},
 			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
 			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
 			validatingWebhookConfigNames: validatingWebhookConfigNames,
 			scrtName:                     "istio.webhook.foo",
+			exepceChannelSignalled:       false,
 		},
 	}
 
@@ -830,34 +847,42 @@ func TestMonitorMutatingWebhookConfig(t *testing.T) {
 			t.Fatalf("failed at creating webhook controller: %v", err)
 		}
 
-		mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
-		defer close(mutatingWebhookChangedCh)
-		stopCh <- struct {}{}
+		webhookCh := wc.monitorMutatingWebhookConfigDebug(wc.mutatingWebhookConfigNames[0], stopCh)
+		if webhookCh == nil {
+			t.Fatal("webhook channel returned by monitorMutatingWebhookConfigDebug is nil")
+		}
+		defer close(webhookCh)
 
-		// time.Sleep(100*time.Millisecond)
+		err = wc.rebuildMutatingWebhookConfig()
+		if err != nil {
+			t.Fatalf("failed to rebuild MutatingWebhookConfiguration: %v", err)
+		}
+		err = createOrUpdateMutatingWebhookConfig(wc)
+		if err != nil {
+			t.Fatalf("error when creating or updating muatingwebhookconfiguration: %v", err)
+		}
+		webhookConfig := wc.mutatingWebhookConfig
+		whClient := wc.admission.MutatingWebhookConfigurations()
+		_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
+		}
 
-
-		//mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
-
-		//err = wc.rebuildMutatingWebhookConfig()
-		//if err != nil {
-		//	t.Fatalf("failed to rebuild MutatingWebhookConfiguration: %v", err)
-		//}
-		//err = createOrUpdateMutatingWebhookConfig(wc)
-		//if err != nil {
-		//	t.Fatalf("error when creating or updating muatingwebhookconfiguration: %v", err)
-		//}
-		//webhookConfig := wc.mutatingWebhookConfig
-		//whClient := wc.admission.MutatingWebhookConfigurations()
-		//_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
-		//if err != nil {
-		//	t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
-		//}
-
-		// <- mutatingWebhookChangedCh
+		if tc.exepceChannelSignalled {
+			select {
+			case <-webhookCh:
+			case <-time.After(2 * time.Second):
+				t.Errorf("the channel is not signalled in 2 seconds")
+			}
+		} else {
+			select {
+			case <-webhookCh:
+				t.Errorf("the channel should not be ignalled")
+			case <-time.After(2 * time.Second):
+			}
+		}
 	}
 }
-
 
 func TestWatchConfigChanges_StopChannelDebug(t *testing.T) {
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
@@ -970,8 +995,6 @@ func TestWatchConfigChanges_StopChannelDebug(t *testing.T) {
 	//time.Sleep(200* time.Millisecond)
 	fmt.Println("exit ...")
 }
-
-
 
 func TestWatchConfigChanges_ExitBySignalStopChannel(t *testing.T) {
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
@@ -1149,8 +1172,6 @@ func TestWatchConfigChanges_StopChannel(t *testing.T) {
 		}
 	}
 }
-
-
 
 func TestWatchConfigChanges_MutatingWebhookConfigChannel(t *testing.T) {
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
