@@ -34,9 +34,10 @@ import (
 	cert "k8s.io/api/certificates/v1beta1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sRuntime "k8s.io/apimachinery/pkg/runtime"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 
 	"k8s.io/client-go/kubernetes/fake"
+	kt "k8s.io/client-go/testing"
 )
 
 const (
@@ -106,7 +107,7 @@ sNzF00Jhi0gU7th75QT3MA==
 )
 
 var (
-	runtimeScheme = k8sRuntime.NewScheme()
+	runtimeScheme = runtime.NewScheme()
 	codecs        = serializer.NewCodecFactory(runtimeScheme)
 	deserializer  = codecs.UniversalDeserializer()
 )
@@ -771,9 +772,19 @@ func TestIsWebhookSecret(t *testing.T) {
 	}
 }
 
+func mutateConfigReactionFunc() kt.ReactionFunc {
+	return func(act kt.Action) (bool, runtime.Object, error) {
+		// Do not return unrelated mutating webhook configuration
+		if act.Matches("get", "mutatingwebhookconfigurations") {
+			return true, nil, fmt.Errorf("unrelated mutating webhook config is not returned")
+		}
+		return false, nil, nil
+	}
+}
+
 func TestMonitorMutatingWebhookConfigDebug(t *testing.T) {
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
-	//mutatingWebhookConfigNames := []string{"protomutate"}
+	mutatingWebhookConfigNames := []string{"protomutate"}
 	mutatingWebhookServiceNames := []string{"foo"}
 	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
 	validatingWebhookConfigNames := []string{"protovalidate"}
@@ -815,7 +826,7 @@ func TestMonitorMutatingWebhookConfigDebug(t *testing.T) {
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
 			namespace:                    "foo.ns",
 			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:   []string{"unrelated-webhook"},
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
 			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
 			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
 			validatingWebhookConfigNames: validatingWebhookConfigNames,
@@ -825,6 +836,9 @@ func TestMonitorMutatingWebhookConfigDebug(t *testing.T) {
 	}
 
 	client := fake.NewSimpleClientset()
+	whName := "unrelated-webhook-config"
+	client.PrependReactor("get", "mutatingwebhookconfigurations", mutateConfigReactionFunc())
+	client.PrependReactor("list", "mutatingwebhookconfigurations", mutateConfigReactionFunc())
 
 	for _, tc := range testCases {
 		stopCh := make(chan struct{})
@@ -853,20 +867,37 @@ func TestMonitorMutatingWebhookConfigDebug(t *testing.T) {
 		}
 		defer close(webhookCh)
 
-		err = wc.rebuildMutatingWebhookConfig()
-		if err != nil {
-			t.Fatalf("failed to rebuild MutatingWebhookConfiguration: %v", err)
-		}
-		err = createOrUpdateMutatingWebhookConfig(wc)
-		if err != nil {
-			t.Fatalf("error when creating or updating muatingwebhookconfiguration: %v", err)
-		}
-		webhookConfig := wc.mutatingWebhookConfig
+		//err = wc.rebuildMutatingWebhookConfig()
+		//if err != nil {
+		//	t.Fatalf("failed to rebuild MutatingWebhookConfiguration: %v", err)
+		//}
+		//err = createOrUpdateMutatingWebhookConfig(wc)
+		//if err != nil {
+		//	t.Fatalf("error when creating or updating muatingwebhookconfiguration: %v", err)
+		//}
+		//webhookConfig := wc.mutatingWebhookConfig
+		//whClient := wc.admission.MutatingWebhookConfigurations()
+		//_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
+		//if err != nil {
+		//	t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
+		//}
+
+		//webhookConfig := wc.mutatingWebhookConfig
+
 		whClient := wc.admission.MutatingWebhookConfigurations()
-		_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
-		if err != nil {
-			t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
+		whConfig := &v1beta1.MutatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: whName,
+			},
 		}
+		_, err = whClient.Create(whConfig)
+		if err != nil {
+			t.Fatalf("error when creating webhook config (%v): %v", whName, err)
+		}
+		//_, err = whClient.Get(whName, metav1.GetOptions{})
+		//if err != nil {
+		//	t.Fatalf("error when getting webhook config (%v): %v", whName, err)
+		//}
 
 		if tc.exepceChannelSignalled {
 			select {

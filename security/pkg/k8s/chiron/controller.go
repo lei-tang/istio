@@ -258,7 +258,8 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 	hostMutate := fmt.Sprintf("%s.%s", wc.mutatingWebhookServiceNames[0], wc.namespace)
 	go wc.checkAndCreateMutatingWebhook(hostMutate, wc.mutatingWebhookServicePorts[0], stopCh)
 	// Only the first mutatingWebhookConfigNames is supported
-	mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
+	//mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
+	mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfigDebug(wc.mutatingWebhookConfigNames[0], stopCh)
 
 	// Delete the existing webhookconfiguration, if any.
 	err = wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
@@ -713,10 +714,12 @@ func (wc *WebhookController) monitorMutatingWebhookConfigDebug(webhookConfigName
 
 	whLW := &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			fmt.Printf("***************** mutatingwebhookconfiguration ListFunc FieldSelector: %v\n", fieldSelector)
 			options.FieldSelector = fieldSelector
 			return wc.admission.MutatingWebhookConfigurations().List(options)
 		},
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			fmt.Printf("***************** mutatingwebhookconfiguration WatchFunc FieldSelector: %v\n", fieldSelector)
 			options.FieldSelector = fieldSelector
 			return wc.admission.MutatingWebhookConfigurations().Watch(options)
 		},
@@ -727,20 +730,27 @@ func (wc *WebhookController) monitorMutatingWebhookConfigDebug(webhookConfigName
 		&v1beta1.MutatingWebhookConfiguration{},
 		0,
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: func(_ interface{}) {
+			AddFunc: func(obj interface{}) {
 				log.Debugf("************ AddFunc() in monitorMutatingWebhookConfig()")
+				//TODO: check the type conversion result
+				config := obj.(*v1beta1.MutatingWebhookConfiguration)
+				fmt.Printf("***************** Add mutatingwebhookconfiguration %v\n", config.Name)
 				webhookChangedCh <- struct{}{}
 			},
 			UpdateFunc: func(prev, curr interface{}) {
 				log.Debugf("************ UpdateFunc() in monitorMutatingWebhookConfig()")
+				//TODO: check the type conversion result
 				prevObj := prev.(*v1beta1.MutatingWebhookConfiguration)
 				currObj := curr.(*v1beta1.MutatingWebhookConfiguration)
 				if prevObj.ResourceVersion != currObj.ResourceVersion {
 					webhookChangedCh <- struct{}{}
 				}
 			},
-			DeleteFunc: func(_ interface{}) {
+			DeleteFunc: func(obj interface{}) {
 				log.Debugf("************ DeleteFunc() in monitorMutatingWebhookConfig()")
+				//TODO: check the type conversion result
+				config := obj.(*v1beta1.MutatingWebhookConfiguration)
+				fmt.Printf("***************** Delete mutatingwebhookconfiguration %v\n", config.Name)
 				webhookChangedCh <- struct{}{}
 			},
 		},
