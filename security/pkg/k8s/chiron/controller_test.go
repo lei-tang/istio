@@ -34,7 +34,8 @@ import (
 	cert "k8s.io/api/certificates/v1beta1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
+
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"k8s.io/client-go/kubernetes/fake"
 	kt "k8s.io/client-go/testing"
@@ -113,7 +114,6 @@ var (
 )
 
 func TestNewWebhookController(t *testing.T) {
-	client := fake.NewSimpleClientset()
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 
@@ -171,6 +171,7 @@ func TestNewWebhookController(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -235,7 +236,6 @@ func TestScrtDeleted(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset()
 	csr := &cert.CertificateSigningRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "domain-cluster.local-ns--secret-mock-secret",
@@ -244,9 +244,11 @@ func TestScrtDeleted(t *testing.T) {
 			Certificate: []byte(exampleIssuedCert),
 		},
 	}
-	client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
+		client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
+
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -388,7 +390,6 @@ func TestScrtUpdated(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset()
 	csr := &cert.CertificateSigningRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "domain-cluster.local-ns--secret-mock-secret",
@@ -397,9 +398,11 @@ func TestScrtUpdated(t *testing.T) {
 			Certificate: []byte(exampleIssuedCert),
 		},
 	}
-	client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
+		client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
+
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -509,7 +512,6 @@ func TestRefreshSecret(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset()
 	csr := &cert.CertificateSigningRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "domain-cluster.local-ns--secret-mock-secret",
@@ -518,9 +520,11 @@ func TestRefreshSecret(t *testing.T) {
 			Certificate: []byte(exampleIssuedCert),
 		},
 	}
-	client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
+		client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
+
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -612,10 +616,10 @@ func TestCleanUpCertGen(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset()
 	csrName := "test-csr"
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -687,7 +691,6 @@ func TestCleanUpCertGen(t *testing.T) {
 }
 
 func TestIsWebhookSecret(t *testing.T) {
-	client := fake.NewSimpleClientset()
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	mutatingWebhookServiceNames := []string{"foo", "bar"}
@@ -746,6 +749,7 @@ func TestIsWebhookSecret(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -761,28 +765,39 @@ func TestIsWebhookSecret(t *testing.T) {
 			defer wc.ValidatingWebhookFileWatcher.Close()
 		}
 		if err != nil {
-			t.Errorf("failed to create a webhook controller: %v", err)
+			t.Fatalf("failed to create a webhook controller: %v", err)
 		}
 
 		ret := wc.isWebhookSecret(tc.scrtName, tc.scrtNameSpace)
 		if tc.expectedRet != ret {
-			t.Errorf("expected result (%v) differs from the actual result (%v)", tc.expectedRet, ret)
-			continue
+			t.Fatalf("expected result (%v) differs from the actual result (%v)", tc.expectedRet, ret)
 		}
+		// Sleep for watchers to release the file handles
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
-func mutateConfigReactionFunc() kt.ReactionFunc {
+func mutatingConfigReactionFunc(obj runtime.Object) kt.ReactionFunc {
 	return func(act kt.Action) (bool, runtime.Object, error) {
-		// Do not return unrelated mutating webhook configuration
-		if act.Matches("get", "mutatingwebhookconfigurations") {
-			return true, nil, fmt.Errorf("unrelated mutating webhook config is not returned")
+		if act.Matches("create", "mutatingwebhookconfigurations") ||
+			act.Matches("get", "mutatingwebhookconfigurations") {
+			return true, obj, nil
 		}
 		return false, nil, nil
 	}
 }
 
-func TestMonitorMutatingWebhookConfigDebug(t *testing.T) {
+func validatingConfigReactionFunc(obj runtime.Object) kt.ReactionFunc {
+	return func(act kt.Action) (bool, runtime.Object, error) {
+		if act.Matches("create", "validatingwebhookconfigurations") ||
+			act.Matches("get", "validatingwebhookconfigurations") {
+			return true, obj, nil
+		}
+		return false, nil, nil
+	}
+}
+
+func TestMonitorMutatingWebhookConfig(t *testing.T) {
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
 	mutatingWebhookConfigNames := []string{"protomutate"}
 	mutatingWebhookServiceNames := []string{"foo"}
@@ -804,22 +819,22 @@ func TestMonitorMutatingWebhookConfigDebug(t *testing.T) {
 		validatingWebhookServiceNames []string
 		validatingWebhookServicePorts []int
 		scrtName                      string
-
-		exepceChannelSignalled bool
+		createUnrelatedWebhookConfig  bool
+		expectChannelSignalled        bool
 	}{
-		//"when mutating webhook config is created, the channel should be signalled": {
-		//	deleteWebhookConfigOnExit:    false,
-		//	gracePeriodRatio:             0.6,
-		//	k8sCaCertFile:                "./test-data/example-ca-cert.pem",
-		//	namespace:                    "foo.ns",
-		//	mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-		//	mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
-		//	mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
-		//	validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-		//	validatingWebhookConfigNames: validatingWebhookConfigNames,
-		//	scrtName:                     "istio.webhook.foo",
-		//	exepceChannelSignalled:       true,
-		//},
+		"when mutating webhook config is created, the channel should be signalled": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			namespace:                    "foo.ns",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			scrtName:                     "istio.webhook.foo",
+			expectChannelSignalled:       true,
+		},
 		"when unrelated mutating webhook config is created, the channel should not be signalled": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
@@ -831,18 +846,23 @@ func TestMonitorMutatingWebhookConfigDebug(t *testing.T) {
 			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
 			validatingWebhookConfigNames: validatingWebhookConfigNames,
 			scrtName:                     "istio.webhook.foo",
-			exepceChannelSignalled:       false,
+			createUnrelatedWebhookConfig: true,
+			expectChannelSignalled:       false,
 		},
 	}
-
-	client := fake.NewSimpleClientset()
-	whName := "unrelated-webhook-config"
-	client.PrependReactor("get", "mutatingwebhookconfigurations", mutateConfigReactionFunc())
-	client.PrependReactor("list", "mutatingwebhookconfigurations", mutateConfigReactionFunc())
 
 	for _, tc := range testCases {
 		stopCh := make(chan struct{})
 		defer close(stopCh)
+
+		// TODO: move all clients inside for loop
+		client := fake.NewSimpleClientset()
+		whName := "unrelated-webhook-config"
+		whConfig := &v1beta1.MutatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: whName,
+			},
+		}
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -861,55 +881,191 @@ func TestMonitorMutatingWebhookConfigDebug(t *testing.T) {
 			t.Fatalf("failed at creating webhook controller: %v", err)
 		}
 
-		webhookCh := wc.monitorMutatingWebhookConfigDebug(wc.mutatingWebhookConfigNames[0], stopCh)
+		webhookCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
 		if webhookCh == nil {
-			t.Fatal("webhook channel returned by monitorMutatingWebhookConfigDebug is nil")
+			t.Fatal("webhook channel returned by monitorMutatingWebhookConfig is nil")
 		}
 		defer close(webhookCh)
 
-		//err = wc.rebuildMutatingWebhookConfig()
-		//if err != nil {
-		//	t.Fatalf("failed to rebuild MutatingWebhookConfiguration: %v", err)
-		//}
-		//err = createOrUpdateMutatingWebhookConfig(wc)
-		//if err != nil {
-		//	t.Fatalf("error when creating or updating muatingwebhookconfiguration: %v", err)
-		//}
-		//webhookConfig := wc.mutatingWebhookConfig
-		//whClient := wc.admission.MutatingWebhookConfigurations()
-		//_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
-		//if err != nil {
-		//	t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
-		//}
-
-		//webhookConfig := wc.mutatingWebhookConfig
-
 		whClient := wc.admission.MutatingWebhookConfigurations()
-		whConfig := &v1beta1.MutatingWebhookConfiguration{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: whName,
-			},
+		if tc.createUnrelatedWebhookConfig {
+			// The default reactor does not use FieldSelector to select
+			// the resources matching the name of webhookconfiguration.
+			// So a custom reactor is used instead.
+			client.PrependReactor("create", "mutatingwebhookconfigurations", mutatingConfigReactionFunc(whConfig))
+			client.PrependReactor("get", "mutatingwebhookconfigurations", mutatingConfigReactionFunc(whConfig))
+			_, err = whClient.Create(whConfig)
+			if err != nil {
+				t.Fatalf("error when creating webhook config (%v): %v", whName, err)
+			}
+			_, err = whClient.Get(whName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("error when getting webhook config (%v): %v", whName, err)
+			}
+		} else {
+			err = wc.rebuildMutatingWebhookConfig()
+			if err != nil {
+				t.Fatalf("failed to rebuild MutatingWebhookConfiguration: %v", err)
+			}
+			err = createOrUpdateMutatingWebhookConfig(wc)
+			if err != nil {
+				t.Fatalf("error when creating or updating muatingwebhookconfiguration: %v", err)
+			}
+			webhookConfig := wc.mutatingWebhookConfig
+			_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
+			}
 		}
-		_, err = whClient.Create(whConfig)
-		if err != nil {
-			t.Fatalf("error when creating webhook config (%v): %v", whName, err)
-		}
-		//_, err = whClient.Get(whName, metav1.GetOptions{})
-		//if err != nil {
-		//	t.Fatalf("error when getting webhook config (%v): %v", whName, err)
-		//}
 
-		if tc.exepceChannelSignalled {
+		if tc.expectChannelSignalled {
 			select {
 			case <-webhookCh:
-			case <-time.After(2 * time.Second):
-				t.Errorf("the channel is not signalled in 2 seconds")
+			case <-time.After(1 * time.Second):
+				t.Errorf("the channel is not signalled in 1 second")
 			}
 		} else {
 			select {
 			case <-webhookCh:
 				t.Errorf("the channel should not be ignalled")
-			case <-time.After(2 * time.Second):
+			case <-time.After(1 * time.Second):
+			}
+		}
+	}
+}
+
+func TestMonitorValidatingWebhookConfig(t *testing.T) {
+	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"protomutate"}
+	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
+	validatingWebhookConfigNames := []string{"protovalidate"}
+	validatingWebhookServiceNames := []string{"foo"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+		scrtName                      string
+		createUnrelatedWebhookConfig  bool
+		expectChannelSignalled        bool
+	}{
+		"when validating webhook config is created, the channel should be signalled": {
+			deleteWebhookConfigOnExit:     false,
+			gracePeriodRatio:              0.6,
+			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
+			namespace:                     "foo.ns",
+			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:    mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
+			validatingWebhookConfigNames:  validatingWebhookConfigNames,
+			validatingWebhookServiceNames: validatingWebhookServiceNames,
+			scrtName:                      "istio.webhook.foo",
+			expectChannelSignalled:        true,
+		},
+		"when unrelated validating webhook config is created, the channel should not be signalled": {
+			deleteWebhookConfigOnExit:     false,
+			gracePeriodRatio:              0.6,
+			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
+			namespace:                     "foo.ns",
+			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:    mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
+			validatingWebhookConfigNames:  validatingWebhookConfigNames,
+			validatingWebhookServiceNames: validatingWebhookServiceNames,
+			scrtName:                      "istio.webhook.foo",
+			createUnrelatedWebhookConfig:  true,
+			expectChannelSignalled:        false,
+		},
+	}
+
+	for _, tc := range testCases {
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+
+		// TODO: move all clients inside for loop
+		client := fake.NewSimpleClientset()
+		whName := "unrelated-webhook-config"
+		whConfig := &v1beta1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: whName,
+			},
+		}
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if wc != nil && wc.K8sCaCertWatcher != nil {
+			defer wc.K8sCaCertWatcher.Close()
+		}
+		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
+			defer wc.MutatingWebhookFileWatcher.Close()
+		}
+		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
+			defer wc.ValidatingWebhookFileWatcher.Close()
+		}
+		if err != nil {
+			t.Fatalf("failed at creating webhook controller: %v", err)
+		}
+
+		webhookCh := wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
+		if webhookCh == nil {
+			t.Fatal("webhook channel returned by monitorValidatingWebhookConfig is nil")
+		}
+		defer close(webhookCh)
+
+		whClient := wc.admission.ValidatingWebhookConfigurations()
+		if tc.createUnrelatedWebhookConfig {
+			// The default reactor does not use FieldSelector to select
+			// the resources matching the name of webhookconfiguration.
+			// So a custom reactor is used instead.
+			client.PrependReactor("create", "validatingwebhookconfigurations", validatingConfigReactionFunc(whConfig))
+			client.PrependReactor("get", "validatingwebhookconfigurations", validatingConfigReactionFunc(whConfig))
+			_, err = whClient.Create(whConfig)
+			if err != nil {
+				t.Fatalf("error when creating webhook config (%v): %v", whName, err)
+			}
+			_, err = whClient.Get(whName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("error when getting webhook config (%v): %v", whName, err)
+			}
+		} else {
+			err = wc.rebuildValidatingWebhookConfig()
+			if err != nil {
+				t.Fatalf("failed to rebuild ValidatingWebhookConfiguration: %v", err)
+			}
+			err = createOrUpdateValidatingWebhookConfig(wc)
+			if err != nil {
+				t.Fatalf("error when creating or updating validatingwebhookconfiguration: %v", err)
+			}
+			webhookConfig := wc.validatingWebhookConfig
+			_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
+			}
+		}
+
+		if tc.expectChannelSignalled {
+			select {
+			case <-webhookCh:
+			case <-time.After(1 * time.Second):
+				t.Errorf("the channel is not signalled in 1 second")
+			}
+		} else {
+			select {
+			case <-webhookCh:
+				t.Errorf("the channel should not be ignalled")
+			case <-time.After(1 * time.Second):
 			}
 		}
 	}
@@ -952,11 +1108,11 @@ func TestWatchConfigChanges_StopChannelDebug(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset()
-
 	for _, tc := range testCases {
 		stopCh := make(chan struct{})
 		defer close(stopCh)
+
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -991,17 +1147,19 @@ func TestWatchConfigChanges_StopChannelDebug(t *testing.T) {
 		}
 
 		//*********** The controllers in the following two lines cause the crash problem.
-		mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
-		validatingWebhookChangedCh := wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
+		//mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
+		//validatingWebhookChangedCh := wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
 
 		//wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
 		//wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
 
 		// Channel signaling watchConfigChanges() completes
 		done := make(chan bool)
+		defer close(done)
 		go func() {
 			fmt.Println("call watchConfigChanges()")
-			wc.watchConfigChanges(mutatingWebhookChangedCh, validatingWebhookChangedCh, stopCh)
+			wc.watchConfigChanges(nil, nil, stopCh)
+			//wc.watchConfigChanges(mutatingWebhookChangedCh, validatingWebhookChangedCh, stopCh)
 			fmt.Println("send done signal.")
 			done <- true //watchConfigChanges() completes.
 		}()

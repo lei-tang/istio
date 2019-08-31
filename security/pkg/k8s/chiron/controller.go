@@ -198,7 +198,7 @@ func NewWebhookController(deleteWebhookConfigurationsOnExit bool, gracePeriodRat
 	// symlink updates of k8s ConfigMaps volumes.
 	// The files watched include the CA certificate file and the webhookconfiguration files,
 	// which are ConfigMap file mounts.
-	// In the prototype, only the first webhookconfiguration is watched.
+	// Currently, only the first webhookconfiguration is watched.
 	files := []string{k8sCaCertFile, mutatingWebhookConfigFiles[0], validatingWebhookConfigFiles[0]}
 	for i := range watchers {
 		*watchers[i], err = fsnotify.NewWatcher()
@@ -259,7 +259,7 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 	go wc.checkAndCreateMutatingWebhook(hostMutate, wc.mutatingWebhookServicePorts[0], stopCh)
 	// Only the first mutatingWebhookConfigNames is supported
 	//mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
-	mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfigDebug(wc.mutatingWebhookConfigNames[0], stopCh)
+	mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
 
 	// Delete the existing webhookconfiguration, if any.
 	err = wc.deleteValidatingWebhookConfig(wc.validatingWebhookConfigNames[0])
@@ -703,9 +703,8 @@ func (wc *WebhookController) checkAndCreateValidatingWebhook(host string, port i
 }
 
 // Run an informer that watches the changes of mutatingwebhookconfiguration.
-func (wc *WebhookController) monitorMutatingWebhookConfigDebug(webhookConfigName string, stopC <-chan struct{}) chan struct{} {
+func (wc *WebhookController) monitorMutatingWebhookConfig(webhookConfigName string, stopC <-chan struct{}) chan struct{} {
 	webhookChangedCh := make(chan struct{}, 1000)
-
 	// webhookconfiguration does not have namespace
 	selector := map[string]string{
 		"metadata.name": webhookConfigName,
@@ -714,12 +713,10 @@ func (wc *WebhookController) monitorMutatingWebhookConfigDebug(webhookConfigName
 
 	whLW := &cache.ListWatch{
 		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-			fmt.Printf("***************** mutatingwebhookconfiguration ListFunc FieldSelector: %v\n", fieldSelector)
 			options.FieldSelector = fieldSelector
 			return wc.admission.MutatingWebhookConfigurations().List(options)
 		},
 		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-			fmt.Printf("***************** mutatingwebhookconfiguration WatchFunc FieldSelector: %v\n", fieldSelector)
 			options.FieldSelector = fieldSelector
 			return wc.admission.MutatingWebhookConfigurations().Watch(options)
 		},
@@ -731,26 +728,27 @@ func (wc *WebhookController) monitorMutatingWebhookConfigDebug(webhookConfigName
 		0,
 		cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				log.Debugf("************ AddFunc() in monitorMutatingWebhookConfig()")
-				//TODO: check the type conversion result
-				config := obj.(*v1beta1.MutatingWebhookConfiguration)
-				fmt.Printf("***************** Add mutatingwebhookconfiguration %v\n", config.Name)
+				log.Debug("************ AddFunc() in monitorMutatingWebhookConfig()")
 				webhookChangedCh <- struct{}{}
 			},
 			UpdateFunc: func(prev, curr interface{}) {
 				log.Debugf("************ UpdateFunc() in monitorMutatingWebhookConfig()")
-				//TODO: check the type conversion result
-				prevObj := prev.(*v1beta1.MutatingWebhookConfiguration)
-				currObj := curr.(*v1beta1.MutatingWebhookConfiguration)
+				prevObj, ok := prev.(*v1beta1.MutatingWebhookConfiguration)
+				if !ok {
+					log.Error("previous object is not MutatingWebhookConfiguration")
+					return
+				}
+				currObj, ok := curr.(*v1beta1.MutatingWebhookConfiguration)
+				if !ok {
+					log.Error("current object is not MutatingWebhookConfiguration")
+					return
+				}
 				if prevObj.ResourceVersion != currObj.ResourceVersion {
 					webhookChangedCh <- struct{}{}
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
 				log.Debugf("************ DeleteFunc() in monitorMutatingWebhookConfig()")
-				//TODO: check the type conversion result
-				config := obj.(*v1beta1.MutatingWebhookConfiguration)
-				fmt.Printf("***************** Delete mutatingwebhookconfiguration %v\n", config.Name)
 				webhookChangedCh <- struct{}{}
 			},
 		},
@@ -760,52 +758,7 @@ func (wc *WebhookController) monitorMutatingWebhookConfigDebug(webhookConfigName
 
 	// Wait for the caches to be synced before starting workers
 	if ok := cache.WaitForCacheSync(stopC, controller.HasSynced); !ok {
-		fmt.Errorf("failed to wait for caches to sync")
-		return nil
-	}
-
-	return webhookChangedCh
-}
-
-// Run an informer that watches the changes of mutatingwebhookconfiguration.
-func (wc *WebhookController) monitorMutatingWebhookConfig(webhookConfigName string, stopC <-chan struct{}) chan struct{} {
-	webhookChangedCh := make(chan struct{}, 1000)
-
-	watchlist := cache.NewListWatchFromClient(
-		wc.admission.RESTClient(),
-		"mutatingwebhookconfigurations",
-		"",
-		fields.ParseSelectorOrDie(fmt.Sprintf("metadata.name=%s", webhookConfigName)))
-
-	_, controller := cache.NewInformer(
-		watchlist,
-		&v1beta1.MutatingWebhookConfiguration{},
-		0,
-		cache.ResourceEventHandlerFuncs{
-			AddFunc: func(_ interface{}) {
-				log.Debugf("************ AddFunc() in monitorMutatingWebhookConfig()")
-				webhookChangedCh <- struct{}{}
-			},
-			UpdateFunc: func(prev, curr interface{}) {
-				log.Debugf("************ UpdateFunc() in monitorMutatingWebhookConfig()")
-				prevObj := prev.(*v1beta1.MutatingWebhookConfiguration)
-				currObj := curr.(*v1beta1.MutatingWebhookConfiguration)
-				if prevObj.ResourceVersion != currObj.ResourceVersion {
-					webhookChangedCh <- struct{}{}
-				}
-			},
-			DeleteFunc: func(_ interface{}) {
-				log.Debugf("************ DeleteFunc() in monitorMutatingWebhookConfig()")
-				webhookChangedCh <- struct{}{}
-			},
-		},
-	)
-
-	go controller.Run(stopC)
-
-	// Wait for the caches to be synced before starting workers
-	if ok := cache.WaitForCacheSync(stopC, controller.HasSynced); !ok {
-		fmt.Errorf("failed to wait for caches to sync")
+		log.Errorf("failed to wait for cache to sync")
 		return nil
 	}
 
@@ -815,37 +768,62 @@ func (wc *WebhookController) monitorMutatingWebhookConfig(webhookConfigName stri
 // Run an informer that watches the changes of validatingwebhookconfiguration.
 func (wc *WebhookController) monitorValidatingWebhookConfig(webhookConfigName string, stopC <-chan struct{}) chan struct{} {
 	webhookChangedCh := make(chan struct{}, 1000)
+	// webhookconfiguration does not have namespace
+	selector := map[string]string{
+		"metadata.name": webhookConfigName,
+	}
+	fieldSelector := fields.SelectorFromSet(selector).String()
 
-	watchlist := cache.NewListWatchFromClient(
-		wc.admission.RESTClient(),
-		"validatingwebhookconfigurations",
-		"",
-		fields.ParseSelectorOrDie(fmt.Sprintf("metadata.name=%s", webhookConfigName)))
+	whLW := &cache.ListWatch{
+		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			options.FieldSelector = fieldSelector
+			return wc.admission.ValidatingWebhookConfigurations().List(options)
+		},
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			options.FieldSelector = fieldSelector
+			return wc.admission.ValidatingWebhookConfigurations().Watch(options)
+		},
+	}
 
 	_, controller := cache.NewInformer(
-		watchlist,
+		whLW,
 		&v1beta1.ValidatingWebhookConfiguration{},
 		0,
 		cache.ResourceEventHandlerFuncs{
-			AddFunc: func(_ interface{}) {
-				log.Debugf("************ AddFunc() in monitorValidatingWebhookConfig()")
+			AddFunc: func(obj interface{}) {
+				log.Debug("************ AddFunc() in monitorValidatingWebhookConfig()")
 				webhookChangedCh <- struct{}{}
 			},
 			UpdateFunc: func(prev, curr interface{}) {
 				log.Debugf("************ UpdateFunc() in monitorValidatingWebhookConfig()")
-				prevObj := prev.(*v1beta1.ValidatingWebhookConfiguration)
-				currObj := curr.(*v1beta1.ValidatingWebhookConfiguration)
+				prevObj, ok := prev.(*v1beta1.ValidatingWebhookConfiguration)
+				if !ok {
+					log.Error("previous object is not ValidatingWebhookConfiguration")
+					return
+				}
+				currObj, ok := curr.(*v1beta1.ValidatingWebhookConfiguration)
+				if !ok {
+					log.Error("current object is not ValidatingWebhookConfiguration")
+					return
+				}
 				if prevObj.ResourceVersion != currObj.ResourceVersion {
 					webhookChangedCh <- struct{}{}
 				}
 			},
-			DeleteFunc: func(_ interface{}) {
+			DeleteFunc: func(obj interface{}) {
 				log.Debugf("************ DeleteFunc() in monitorValidatingWebhookConfig()")
 				webhookChangedCh <- struct{}{}
 			},
 		},
 	)
+
 	go controller.Run(stopC)
+
+	// Wait for the caches to be synced before starting workers
+	if ok := cache.WaitForCacheSync(stopC, controller.HasSynced); !ok {
+		log.Errorf("failed to wait for cache to sync")
+		return nil
+	}
 
 	return webhookChangedCh
 }
