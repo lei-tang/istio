@@ -819,9 +819,9 @@ func TestMonitorMutatingWebhookConfig(t *testing.T) {
 		validatingWebhookServicePorts []int
 		scrtName                      string
 		createUnrelatedWebhookConfig  bool
-		expectChannelSignalled        bool
+		expectChannelsignaled         bool
 	}{
-		"when mutating webhook config is created, the channel should be signalled": {
+		"when mutating webhook config is created, the channel should be signaled": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
@@ -832,9 +832,9 @@ func TestMonitorMutatingWebhookConfig(t *testing.T) {
 			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
 			validatingWebhookConfigNames: validatingWebhookConfigNames,
 			scrtName:                     "istio.webhook.foo",
-			expectChannelSignalled:       true,
+			expectChannelsignaled:        true,
 		},
-		"when unrelated mutating webhook config is created, the channel should not be signalled": {
+		"when unrelated mutating webhook config is created, the channel should not be signaled": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
@@ -846,7 +846,7 @@ func TestMonitorMutatingWebhookConfig(t *testing.T) {
 			validatingWebhookConfigNames: validatingWebhookConfigNames,
 			scrtName:                     "istio.webhook.foo",
 			createUnrelatedWebhookConfig: true,
-			expectChannelSignalled:       false,
+			expectChannelsignaled:        false,
 		},
 	}
 
@@ -917,11 +917,11 @@ func TestMonitorMutatingWebhookConfig(t *testing.T) {
 			}
 		}
 
-		if tc.expectChannelSignalled {
+		if tc.expectChannelsignaled {
 			select {
 			case <-webhookCh:
 			case <-time.After(1 * time.Second):
-				t.Errorf("the channel is not signalled in 1 second")
+				t.Errorf("the channel is not signaled in 1 second")
 			}
 		} else {
 			select {
@@ -956,9 +956,9 @@ func TestMonitorValidatingWebhookConfig(t *testing.T) {
 		validatingWebhookServicePorts []int
 		scrtName                      string
 		createUnrelatedWebhookConfig  bool
-		expectChannelSignalled        bool
+		expectChannelsignaled         bool
 	}{
-		"when validating webhook config is created, the channel should be signalled": {
+		"when validating webhook config is created, the channel should be signaled": {
 			deleteWebhookConfigOnExit:     false,
 			gracePeriodRatio:              0.6,
 			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
@@ -969,9 +969,9 @@ func TestMonitorValidatingWebhookConfig(t *testing.T) {
 			validatingWebhookConfigNames:  validatingWebhookConfigNames,
 			validatingWebhookServiceNames: validatingWebhookServiceNames,
 			scrtName:                      "istio.webhook.foo",
-			expectChannelSignalled:        true,
+			expectChannelsignaled:         true,
 		},
-		"when unrelated validating webhook config is created, the channel should not be signalled": {
+		"when unrelated validating webhook config is created, the channel should not be signaled": {
 			deleteWebhookConfigOnExit:     false,
 			gracePeriodRatio:              0.6,
 			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
@@ -983,7 +983,7 @@ func TestMonitorValidatingWebhookConfig(t *testing.T) {
 			validatingWebhookServiceNames: validatingWebhookServiceNames,
 			scrtName:                      "istio.webhook.foo",
 			createUnrelatedWebhookConfig:  true,
-			expectChannelSignalled:        false,
+			expectChannelsignaled:         false,
 		},
 	}
 
@@ -1054,11 +1054,11 @@ func TestMonitorValidatingWebhookConfig(t *testing.T) {
 			}
 		}
 
-		if tc.expectChannelSignalled {
+		if tc.expectChannelsignaled {
 			select {
 			case <-webhookCh:
 			case <-time.After(1 * time.Second):
-				t.Errorf("the channel is not signalled in 1 second")
+				t.Errorf("the channel is not signaled in 1 second")
 			}
 		} else {
 			select {
@@ -1093,7 +1093,7 @@ func TestWatchConfigChanges_ExitBySignalStopChannel(t *testing.T) {
 		validatingWebhookServicePorts []int
 		scrtName                      string
 	}{
-		"when stopCh is signalled, the watcher should exit": {
+		"when stopCh is signaled, the watcher should exit": {
 			deleteWebhookConfigOnExit:    false,
 			gracePeriodRatio:             0.6,
 			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
@@ -1143,11 +1143,11 @@ func TestWatchConfigChanges_ExitBySignalStopChannel(t *testing.T) {
 		// signal stopCh
 		stopCh <- struct{}{}
 
-		// When stopCh is signalled, watchConfigChanges() should exit
+		// When stopCh is signaled, watchConfigChanges() should exit
 		select {
 		case <-done:
 		case <-time.After(1 * time.Second):
-			t.Fatalf("the watchConfigChanges() done channel is not signalled in 1 second")
+			t.Fatalf("the watchConfigChanges() done channel is not signaled in 1 second")
 		}
 	}
 }
@@ -1242,7 +1242,7 @@ func TestWatchConfigChanges_StopChannel(t *testing.T) {
 		select {
 		case <-done:
 		case <-time.After(1 * time.Second):
-			t.Fatalf("the watchConfigChanges() done channel is not signalled in 1 second")
+			t.Fatalf("the watchConfigChanges() done channel is not signaled in 1 second")
 		}
 
 		//After the stopCh signal is handled, the webhook configuration should have been
@@ -1351,7 +1351,7 @@ func TestWatchConfigChanges_MutatingWebhookConfigChannel(t *testing.T) {
 		select {
 		case <-done:
 		case <-time.After(1 * time.Second):
-			t.Fatalf("the watchConfigChanges() done channel is not signalled in 1 second")
+			t.Fatalf("the watchConfigChanges() done channel is not signaled in 1 second")
 		}
 
 		_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
@@ -1458,7 +1458,7 @@ func TestWatchConfigChanges_ValidatingWebhookConfigChannel(t *testing.T) {
 		select {
 		case <-done:
 		case <-time.After(1 * time.Second):
-			t.Fatalf("the watchConfigChanges() done channel is not signalled in 1 second")
+			t.Fatalf("the watchConfigChanges() done channel is not signaled in 1 second")
 		}
 
 		_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
@@ -1898,7 +1898,7 @@ func TestGetServiceName(t *testing.T) {
 	}
 }
 
-func TestGetWebhookSecretNameFromSvcname(t *testing.T) {
+func TestGetWebhookSecretNameFromSvcName(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
@@ -1949,7 +1949,7 @@ func TestGetWebhookSecretNameFromSvcname(t *testing.T) {
 			t.Errorf("failed to create a webhook controller: %v", err)
 		}
 
-		ret := wc.getWebhookSecretNameFromSvcname(tc.svcName)
+		ret := wc.getWebhookSecretNameFromSvcName(tc.svcName)
 		if tc.expectedScrtName != ret {
 			t.Errorf("the secret name (%v) returned is not as expcted (%v)", ret, tc.expectedScrtName)
 		}

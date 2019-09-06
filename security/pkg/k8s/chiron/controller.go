@@ -198,7 +198,10 @@ func NewWebhookController(deleteWebhookConfigurationsOnExit bool, gracePeriodRat
 	// symlink updates of k8s ConfigMaps volumes.
 	// The files watched include the CA certificate file and the webhookconfiguration files,
 	// which are ConfigMap file mounts.
-	// Currently, only the first webhookconfiguration is watched.
+	// In current implementation, only the first webhook configurations of mutating webhooks and validating
+	// webhooks are watched.
+	// TODO (lei-tang): support all webhook configurations in mutatingWebhookConfigFiles and
+	// validatingWebhookConfigFiles.
 	files := []string{k8sCaCertFile, mutatingWebhookConfigFiles[0], validatingWebhookConfigFiles[0]}
 	for i := range watchers {
 		*watchers[i], err = fsnotify.NewWatcher()
@@ -235,13 +238,13 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 
 	// Create secrets containing certificates for webhooks
 	for _, svcName := range wc.mutatingWebhookServiceNames {
-		err := wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(svcName), wc.namespace)
+		err := wc.upsertSecret(wc.getWebhookSecretNameFromSvcName(svcName), wc.namespace)
 		if err != nil {
 			log.Errorf("error when upserting svc (%v) in ns (%v): %v", svcName, wc.namespace, err)
 		}
 	}
 	for _, svcName := range wc.validatingWebhookServiceNames {
-		err := wc.upsertSecret(wc.getWebhookSecretNameFromSvcname(svcName), wc.namespace)
+		err := wc.upsertSecret(wc.getWebhookSecretNameFromSvcName(svcName), wc.namespace)
 		if err != nil {
 			log.Errorf("error when upserting svc (%v) in ns (%v): %v", svcName, wc.namespace, err)
 		}
@@ -258,7 +261,6 @@ func (wc *WebhookController) Run(stopCh chan struct{}) {
 	hostMutate := fmt.Sprintf("%s.%s", wc.mutatingWebhookServiceNames[0], wc.namespace)
 	go wc.checkAndCreateMutatingWebhook(hostMutate, wc.mutatingWebhookServicePorts[0], stopCh)
 	// Only the first mutatingWebhookConfigNames is supported
-	//mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
 	mutatingWebhookChangedCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
 
 	// Delete the existing webhookconfiguration, if any.
@@ -336,7 +338,7 @@ func (wc *WebhookController) upsertSecret(secretName, secretNamespace string) er
 			}
 			break
 		} else {
-			log.Errorf("failed to create secret in attempt %v/%v, (error: %s)", i+1, secretCreationRetry, err)
+			log.Warnf("failed to create secret in attempt %v/%v, (error: %s)", i+1, secretCreationRetry, err)
 		}
 		time.Sleep(time.Second)
 	}
@@ -469,12 +471,12 @@ func (wc *WebhookController) cleanUpCertGen(csrName string) error {
 // Return whether the input secret name is a Webhook secret
 func (wc *WebhookController) isWebhookSecret(name, namespace string) bool {
 	for _, n := range wc.mutatingWebhookServiceNames {
-		if name == wc.getWebhookSecretNameFromSvcname(n) && namespace == wc.namespace {
+		if name == wc.getWebhookSecretNameFromSvcName(n) && namespace == wc.namespace {
 			return true
 		}
 	}
 	for _, n := range wc.validatingWebhookServiceNames {
-		if name == wc.getWebhookSecretNameFromSvcname(n) && namespace == wc.namespace {
+		if name == wc.getWebhookSecretNameFromSvcName(n) && namespace == wc.namespace {
 			return true
 		}
 	}
@@ -596,12 +598,12 @@ func (wc *WebhookController) getCACert() ([]byte, error) {
 // Get the service name for the secret. Return the service name and whether it is found.
 func (wc *WebhookController) getServiceName(secretName string) (string, bool) {
 	for _, name := range wc.mutatingWebhookServiceNames {
-		if wc.getWebhookSecretNameFromSvcname(name) == secretName {
+		if wc.getWebhookSecretNameFromSvcName(name) == secretName {
 			return name, true
 		}
 	}
 	for _, name := range wc.validatingWebhookServiceNames {
-		if wc.getWebhookSecretNameFromSvcname(name) == secretName {
+		if wc.getWebhookSecretNameFromSvcName(name) == secretName {
 			return name, true
 		}
 	}
@@ -901,6 +903,6 @@ func (wc *WebhookController) rebuildValidatingWebhookConfig() error {
 }
 
 // Return the webhook secret name based on the service name
-func (wc *WebhookController) getWebhookSecretNameFromSvcname(svcName string) string {
+func (wc *WebhookController) getWebhookSecretNameFromSvcName(svcName string) string {
 	return fmt.Sprintf("%s.%s", prefixWebhookSecretName, svcName)
 }
