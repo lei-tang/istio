@@ -1107,9 +1107,8 @@ func TestWatchConfigChanges_ExitBySignalStopChannel(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset()
-
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		stopCh := make(chan struct{})
 		defer close(stopCh)
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
@@ -1503,9 +1502,8 @@ func TestRebuildMutatingWebhookConfig(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset()
-
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -1585,9 +1583,8 @@ func TestRebuildValidatingWebhookConfig(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset()
-
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -1669,9 +1666,8 @@ func TestGetCACert(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset()
-
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		// If the CA cert. is invalid, NewWebhookController will fail.
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
@@ -1756,18 +1752,18 @@ func TestUpsertSecret(t *testing.T) {
 		},
 	}
 
-	client := fake.NewSimpleClientset()
-	csr := &cert.CertificateSigningRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "domain-cluster.local-ns--secret-mock-secret",
-		},
-		Status: cert.CertificateSigningRequestStatus{
-			Certificate: []byte(exampleIssuedCert),
-		},
-	}
-	client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
-
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
+		csr := &cert.CertificateSigningRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "domain-cluster.local-ns--secret-mock-secret",
+			},
+			Status: cert.CertificateSigningRequestStatus{
+				Certificate: []byte(exampleIssuedCert),
+			},
+		}
+		client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
+
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -1800,7 +1796,6 @@ func TestUpsertSecret(t *testing.T) {
 }
 
 func TestGetServiceName(t *testing.T) {
-	client := fake.NewSimpleClientset()
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	mutatingWebhookServiceNames := []string{"foo", "bar"}
@@ -1869,6 +1864,7 @@ func TestGetServiceName(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -1899,7 +1895,6 @@ func TestGetServiceName(t *testing.T) {
 }
 
 func TestGetWebhookSecretNameFromSvcName(t *testing.T) {
-	client := fake.NewSimpleClientset()
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 
@@ -1931,6 +1926,7 @@ func TestGetWebhookSecretNameFromSvcName(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,

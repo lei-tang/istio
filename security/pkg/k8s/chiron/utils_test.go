@@ -24,9 +24,12 @@ import (
 	"testing"
 	"time"
 
+	"istio.io/istio/pkg/spiffe"
+
+	cert "k8s.io/api/certificates/v1beta1"
+
 	"k8s.io/apimachinery/pkg/runtime"
 
-	certificates "k8s.io/api/certificates/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	kt "k8s.io/client-go/testing"
@@ -95,17 +98,6 @@ func TestGenKeyCertK8sCA(t *testing.T) {
 	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
 	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
 
-	client := fake.NewSimpleClientset()
-	csr := &certificates.CertificateSigningRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "domain-cluster.local-ns--secret-mock-secret",
-		},
-		Status: certificates.CertificateSigningRequestStatus{
-			Certificate: []byte(exampleIssuedCert),
-		},
-	}
-	client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
-
 	testCases := map[string]struct {
 		deleteWebhookConfigOnExit     bool
 		gracePeriodRatio              float32
@@ -143,6 +135,17 @@ func TestGenKeyCertK8sCA(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
+		csr := &cert.CertificateSigningRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "domain-cluster.local-ns--secret-mock-secret",
+			},
+			Status: cert.CertificateSigningRequestStatus{
+				Certificate: []byte(exampleIssuedCert),
+			},
+		}
+		client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
+
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -167,10 +170,8 @@ func TestGenKeyCertK8sCA(t *testing.T) {
 			if err == nil {
 				t.Errorf("should have failed at updateMutatingWebhookConfig")
 			}
-			continue
 		} else if err != nil {
 			t.Errorf("failed at updateMutatingWebhookConfig: %v", err)
-			continue
 		}
 	}
 }
@@ -280,7 +281,6 @@ func TestRebuildValidatingWebhookConfigHelper(t *testing.T) {
 }
 
 func TestCreateOrUpdateMutatingWebhookConfig(t *testing.T) {
-	client := fake.NewSimpleClientset()
 	emptyMutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
@@ -341,6 +341,7 @@ func TestCreateOrUpdateMutatingWebhookConfig(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -382,7 +383,6 @@ func TestCreateOrUpdateMutatingWebhookConfig(t *testing.T) {
 }
 
 func TestCreateOrUpdateValidatingWebhookConfig(t *testing.T) {
-	client := fake.NewSimpleClientset()
 	emptyValidatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
@@ -443,6 +443,7 @@ func TestCreateOrUpdateValidatingWebhookConfig(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -484,7 +485,6 @@ func TestCreateOrUpdateValidatingWebhookConfig(t *testing.T) {
 }
 
 func TestUpdateMutatingWebhookConfig(t *testing.T) {
-	client := fake.NewSimpleClientset()
 	emptyMutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
@@ -531,6 +531,7 @@ func TestUpdateMutatingWebhookConfig(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -564,7 +565,6 @@ func TestUpdateMutatingWebhookConfig(t *testing.T) {
 }
 
 func TestUpdateValidatingWebhookConfig(t *testing.T) {
-	client := fake.NewSimpleClientset()
 	emptyValidatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
@@ -611,6 +611,7 @@ func TestUpdateValidatingWebhookConfig(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -644,7 +645,6 @@ func TestUpdateValidatingWebhookConfig(t *testing.T) {
 }
 
 func TestUpdateCertAndWebhookConfig(t *testing.T) {
-	client := fake.NewSimpleClientset()
 	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
@@ -712,6 +712,7 @@ func TestUpdateCertAndWebhookConfig(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -768,7 +769,6 @@ func TestUpdateCertAndWebhookConfig(t *testing.T) {
 }
 
 func TestReloadCACert(t *testing.T) {
-	client := fake.NewSimpleClientset()
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
 
@@ -802,6 +802,7 @@ func TestReloadCACert(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
 		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
 			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
 			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
@@ -838,6 +839,253 @@ func TestReloadCACert(t *testing.T) {
 			if changed {
 				t.Error("expect unchanged but changed")
 			}
+		}
+	}
+}
+
+func TestSubmitCSR(t *testing.T) {
+	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
+	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
+	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+
+		secretName      string
+		secretNameSpace string
+		svcName         string
+
+		createDuplicate bool
+		expectFaill     bool
+	}{
+		"submit a CSR without duplicate should succeed": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			secretName:                   "mock-secret",
+			secretNameSpace:              "mock-secret-namespace",
+			svcName:                      "mock-service-name",
+			createDuplicate:              false,
+			expectFaill:                  false,
+		},
+		"submit a CSR with duplicate should succeed": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			secretName:                   "mock-secret",
+			secretNameSpace:              "mock-secret-namespace",
+			svcName:                      "mock-service-name",
+			createDuplicate:              false,
+			expectFaill:                  false,
+		},
+	}
+
+	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
+		csr := &cert.CertificateSigningRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "domain-cluster.local-ns--secret-mock-secret",
+			},
+			Status: cert.CertificateSigningRequestStatus{
+				Certificate: []byte(exampleIssuedCert),
+			},
+		}
+		client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
+
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if wc != nil && wc.K8sCaCertWatcher != nil {
+			defer wc.K8sCaCertWatcher.Close()
+		}
+		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
+			defer wc.MutatingWebhookFileWatcher.Close()
+		}
+		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
+			defer wc.ValidatingWebhookFileWatcher.Close()
+		}
+		if err != nil {
+			t.Errorf("failed at creating webhook controller: %v", err)
+			continue
+		}
+
+		csrName := fmt.Sprintf("domain-%s-ns-%s-secret-%s", spiffe.GetTrustDomain(), tc.secretNameSpace, tc.secretName)
+		numRetries := 3
+		csrPEM := "fake-csr"
+
+		if tc.createDuplicate {
+			// Create a duplicate CSR to whether submitCSR() still functions correctly
+			k8sCSR := &cert.CertificateSigningRequest{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "certificates.k8s.io/v1beta1",
+					Kind:       "CertificateSigningRequest",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: csrName,
+				},
+				Spec: cert.CertificateSigningRequestSpec{
+					Request: []byte(csrPEM),
+					Groups:  []string{"system:authenticated"},
+					Usages: []cert.KeyUsage{
+						cert.UsageDigitalSignature,
+						cert.UsageKeyEncipherment,
+						cert.UsageServerAuth,
+						cert.UsageClientAuth,
+					},
+				},
+			}
+			reqRet, errRet := wc.certClient.CertificateSigningRequests().Create(k8sCSR)
+			if errRet == nil && reqRet != nil {
+				t.Errorf("failed to create a CSR, return is nil or error (%v)", errRet)
+				continue
+			}
+		}
+
+		r, err := submitCSR(wc, csrName, []byte(csrPEM), numRetries)
+		if tc.expectFaill {
+			if err == nil {
+				t.Errorf("should have failed at updateMutatingWebhookConfig")
+			}
+		} else if err != nil || r == nil {
+			t.Errorf("failed at updateMutatingWebhookConfig: %v", err)
+		}
+	}
+}
+
+func TestReadSignedCertificate(t *testing.T) {
+	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
+	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
+	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+
+		secretName      string
+		secretNameSpace string
+		svcName         string
+
+		invalidCert bool
+		expectFaill bool
+	}{
+		"read signed cert should succeed": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			secretName:                   "mock-secret",
+			secretNameSpace:              "mock-secret-namespace",
+			svcName:                      "mock-service-name",
+			invalidCert:                  false,
+			expectFaill:                  false,
+		},
+		"read invalid signed cert should fail": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			secretName:                   "mock-secret",
+			secretNameSpace:              "mock-secret-namespace",
+			svcName:                      "mock-service-name",
+			invalidCert:                  true,
+			expectFaill:                  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
+		var csr *cert.CertificateSigningRequest
+		if tc.invalidCert {
+			csr = &cert.CertificateSigningRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "domain-cluster.local-ns--secret-mock-secret",
+				},
+				Status: cert.CertificateSigningRequestStatus{
+					Certificate: []byte("invalid-cert"),
+				},
+			}
+		} else {
+			csr = &cert.CertificateSigningRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "domain-cluster.local-ns--secret-mock-secret",
+				},
+				Status: cert.CertificateSigningRequestStatus{
+					Certificate: []byte(exampleIssuedCert),
+				},
+			}
+		}
+		client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
+
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if wc != nil && wc.K8sCaCertWatcher != nil {
+			defer wc.K8sCaCertWatcher.Close()
+		}
+		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
+			defer wc.MutatingWebhookFileWatcher.Close()
+		}
+		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
+			defer wc.ValidatingWebhookFileWatcher.Close()
+		}
+		if err != nil {
+			t.Errorf("failed at creating webhook controller: %v", err)
+			continue
+		}
+
+		// 4. Read the signed certificate
+		csrName := fmt.Sprintf("domain-%s-ns-%s-secret-%s", spiffe.GetTrustDomain(), tc.secretNameSpace, tc.secretName)
+		_, _, err = readSignedCertificate(wc, csrName, certReadInterval, maxNumCertRead)
+
+		if tc.expectFaill {
+			if err == nil {
+				t.Errorf("should have failed at updateMutatingWebhookConfig")
+			}
+		} else if err != nil {
+			t.Errorf("failed at updateMutatingWebhookConfig: %v", err)
 		}
 	}
 }
