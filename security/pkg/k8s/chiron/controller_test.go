@@ -198,6 +198,101 @@ func TestNewWebhookController(t *testing.T) {
 	}
 }
 
+func TestUpsertSecret(t *testing.T) {
+	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
+	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
+	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
+	mutatingWebhookServiceNames := []string{"foo"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+		scrtName                      string
+		expectFaill                   bool
+	}{
+		"upsert a valid secret name should succeed": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			namespace:                    "foo.ns",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			scrtName:                     "istio.webhook.foo",
+			expectFaill:                  false,
+		},
+		"upsert an invalid secret name should fail": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			namespace:                    "bar.ns",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			scrtName:                     "istio.webhook.bar",
+			expectFaill:                  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
+		csr := &cert.CertificateSigningRequest{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "domain-cluster.local-ns--secret-mock-secret",
+			},
+			Status: cert.CertificateSigningRequestStatus{
+				Certificate: []byte(exampleIssuedCert),
+			},
+		}
+		client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
+
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if wc != nil && wc.K8sCaCertWatcher != nil {
+			defer wc.K8sCaCertWatcher.Close()
+		}
+		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
+			defer wc.MutatingWebhookFileWatcher.Close()
+		}
+		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
+			defer wc.ValidatingWebhookFileWatcher.Close()
+		}
+		if err != nil {
+			t.Errorf("failed at creating webhook controller: %v", err)
+			continue
+		}
+
+		err = wc.upsertSecret(tc.scrtName, tc.namespace)
+		if tc.expectFaill {
+			if err == nil {
+				t.Errorf("should have failed at upsertSecret")
+			}
+			continue
+		} else if err != nil {
+			t.Errorf("should not failed at upsertSecret, err: %v", err)
+		}
+	}
+}
+
 func TestScrtDeleted(t *testing.T) {
 	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
 	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
@@ -795,281 +890,6 @@ func validatingConfigReactionFunc(obj runtime.Object) kt.ReactionFunc {
 		return false, nil, nil
 	}
 }
-
-func TestMonitorMutatingWebhookConfig(t *testing.T) {
-	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
-	mutatingWebhookConfigNames := []string{"protomutate"}
-	mutatingWebhookServiceNames := []string{"foo"}
-	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
-	validatingWebhookConfigNames := []string{"protovalidate"}
-
-	testCases := map[string]struct {
-		deleteWebhookConfigOnExit     bool
-		gracePeriodRatio              float32
-		minGracePeriod                time.Duration
-		k8sCaCertFile                 string
-		namespace                     string
-		mutatingWebhookConfigFiles    []string
-		mutatingWebhookConfigNames    []string
-		mutatingWebhookSerivceNames   []string
-		mutatingWebhookSerivcePorts   []int
-		validatingWebhookConfigFiles  []string
-		validatingWebhookConfigNames  []string
-		validatingWebhookServiceNames []string
-		validatingWebhookServicePorts []int
-		scrtName                      string
-		createUnrelatedWebhookConfig  bool
-		expectChannelsignaled         bool
-	}{
-		"when mutating webhook config is created, the channel should be signaled": {
-			deleteWebhookConfigOnExit:    false,
-			gracePeriodRatio:             0.6,
-			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
-			namespace:                    "foo.ns",
-			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
-			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
-			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-			validatingWebhookConfigNames: validatingWebhookConfigNames,
-			scrtName:                     "istio.webhook.foo",
-			expectChannelsignaled:        true,
-		},
-		"when unrelated mutating webhook config is created, the channel should not be signaled": {
-			deleteWebhookConfigOnExit:    false,
-			gracePeriodRatio:             0.6,
-			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
-			namespace:                    "foo.ns",
-			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
-			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
-			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-			validatingWebhookConfigNames: validatingWebhookConfigNames,
-			scrtName:                     "istio.webhook.foo",
-			createUnrelatedWebhookConfig: true,
-			expectChannelsignaled:        false,
-		},
-	}
-
-	for _, tc := range testCases {
-		stopCh := make(chan struct{})
-		defer close(stopCh)
-
-		// TODO: move all clients inside for loop
-		client := fake.NewSimpleClientset()
-		whName := "unrelated-webhook-config"
-		whConfig := &v1beta1.MutatingWebhookConfiguration{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: whName,
-			},
-		}
-		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
-			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
-			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
-			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
-			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
-		if wc != nil && wc.K8sCaCertWatcher != nil {
-			defer wc.K8sCaCertWatcher.Close()
-		}
-		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
-			defer wc.MutatingWebhookFileWatcher.Close()
-		}
-		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
-			defer wc.ValidatingWebhookFileWatcher.Close()
-		}
-		if err != nil {
-			t.Fatalf("failed at creating webhook controller: %v", err)
-		}
-
-		webhookCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
-		if webhookCh == nil {
-			t.Fatal("webhook channel returned by monitorMutatingWebhookConfig is nil")
-		}
-		defer close(webhookCh)
-
-		whClient := wc.admission.MutatingWebhookConfigurations()
-		if tc.createUnrelatedWebhookConfig {
-			// The default reactor does not use FieldSelector to select
-			// the resources matching the name of webhookconfiguration.
-			// So a custom reactor is used instead.
-			client.PrependReactor("create", "mutatingwebhookconfigurations", mutatingConfigReactionFunc(whConfig))
-			client.PrependReactor("get", "mutatingwebhookconfigurations", mutatingConfigReactionFunc(whConfig))
-			_, err = whClient.Create(whConfig)
-			if err != nil {
-				t.Fatalf("error when creating webhook config (%v): %v", whName, err)
-			}
-			_, err = whClient.Get(whName, metav1.GetOptions{})
-			if err != nil {
-				t.Fatalf("error when getting webhook config (%v): %v", whName, err)
-			}
-		} else {
-			err = wc.rebuildMutatingWebhookConfig()
-			if err != nil {
-				t.Fatalf("failed to rebuild MutatingWebhookConfiguration: %v", err)
-			}
-			err = createOrUpdateMutatingWebhookConfig(wc)
-			if err != nil {
-				t.Fatalf("error when creating or updating muatingwebhookconfiguration: %v", err)
-			}
-			webhookConfig := wc.mutatingWebhookConfig
-			_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
-			if err != nil {
-				t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
-			}
-		}
-
-		if tc.expectChannelsignaled {
-			select {
-			case <-webhookCh:
-			case <-time.After(1 * time.Second):
-				t.Errorf("the channel is not signaled in 1 second")
-			}
-		} else {
-			select {
-			case <-webhookCh:
-				t.Errorf("the channel should not be ignalled")
-			case <-time.After(1 * time.Second):
-			}
-		}
-	}
-}
-
-func TestMonitorValidatingWebhookConfig(t *testing.T) {
-	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
-	mutatingWebhookConfigNames := []string{"protomutate"}
-	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
-	validatingWebhookConfigNames := []string{"protovalidate"}
-	validatingWebhookServiceNames := []string{"foo"}
-
-	testCases := map[string]struct {
-		deleteWebhookConfigOnExit     bool
-		gracePeriodRatio              float32
-		minGracePeriod                time.Duration
-		k8sCaCertFile                 string
-		namespace                     string
-		mutatingWebhookConfigFiles    []string
-		mutatingWebhookConfigNames    []string
-		mutatingWebhookSerivceNames   []string
-		mutatingWebhookSerivcePorts   []int
-		validatingWebhookConfigFiles  []string
-		validatingWebhookConfigNames  []string
-		validatingWebhookServiceNames []string
-		validatingWebhookServicePorts []int
-		scrtName                      string
-		createUnrelatedWebhookConfig  bool
-		expectChannelsignaled         bool
-	}{
-		"when validating webhook config is created, the channel should be signaled": {
-			deleteWebhookConfigOnExit:     false,
-			gracePeriodRatio:              0.6,
-			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
-			namespace:                     "foo.ns",
-			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:    mutatingWebhookConfigNames,
-			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
-			validatingWebhookConfigNames:  validatingWebhookConfigNames,
-			validatingWebhookServiceNames: validatingWebhookServiceNames,
-			scrtName:                      "istio.webhook.foo",
-			expectChannelsignaled:         true,
-		},
-		"when unrelated validating webhook config is created, the channel should not be signaled": {
-			deleteWebhookConfigOnExit:     false,
-			gracePeriodRatio:              0.6,
-			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
-			namespace:                     "foo.ns",
-			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:    mutatingWebhookConfigNames,
-			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
-			validatingWebhookConfigNames:  validatingWebhookConfigNames,
-			validatingWebhookServiceNames: validatingWebhookServiceNames,
-			scrtName:                      "istio.webhook.foo",
-			createUnrelatedWebhookConfig:  true,
-			expectChannelsignaled:         false,
-		},
-	}
-
-	for _, tc := range testCases {
-		stopCh := make(chan struct{})
-		defer close(stopCh)
-
-		// TODO: move all clients inside for loop
-		client := fake.NewSimpleClientset()
-		whName := "unrelated-webhook-config"
-		whConfig := &v1beta1.ValidatingWebhookConfiguration{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: whName,
-			},
-		}
-		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
-			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
-			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
-			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
-			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
-		if wc != nil && wc.K8sCaCertWatcher != nil {
-			defer wc.K8sCaCertWatcher.Close()
-		}
-		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
-			defer wc.MutatingWebhookFileWatcher.Close()
-		}
-		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
-			defer wc.ValidatingWebhookFileWatcher.Close()
-		}
-		if err != nil {
-			t.Fatalf("failed at creating webhook controller: %v", err)
-		}
-
-		webhookCh := wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
-		if webhookCh == nil {
-			t.Fatal("webhook channel returned by monitorValidatingWebhookConfig is nil")
-		}
-		defer close(webhookCh)
-
-		whClient := wc.admission.ValidatingWebhookConfigurations()
-		if tc.createUnrelatedWebhookConfig {
-			// The default reactor does not use FieldSelector to select
-			// the resources matching the name of webhookconfiguration.
-			// So a custom reactor is used instead.
-			client.PrependReactor("create", "validatingwebhookconfigurations", validatingConfigReactionFunc(whConfig))
-			client.PrependReactor("get", "validatingwebhookconfigurations", validatingConfigReactionFunc(whConfig))
-			_, err = whClient.Create(whConfig)
-			if err != nil {
-				t.Fatalf("error when creating webhook config (%v): %v", whName, err)
-			}
-			_, err = whClient.Get(whName, metav1.GetOptions{})
-			if err != nil {
-				t.Fatalf("error when getting webhook config (%v): %v", whName, err)
-			}
-		} else {
-			err = wc.rebuildValidatingWebhookConfig()
-			if err != nil {
-				t.Fatalf("failed to rebuild ValidatingWebhookConfiguration: %v", err)
-			}
-			err = createOrUpdateValidatingWebhookConfig(wc)
-			if err != nil {
-				t.Fatalf("error when creating or updating validatingwebhookconfiguration: %v", err)
-			}
-			webhookConfig := wc.validatingWebhookConfig
-			_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
-			if err != nil {
-				t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
-			}
-		}
-
-		if tc.expectChannelsignaled {
-			select {
-			case <-webhookCh:
-			case <-time.After(1 * time.Second):
-				t.Errorf("the channel is not signaled in 1 second")
-			}
-		} else {
-			select {
-			case <-webhookCh:
-				t.Errorf("the channel should not be ignalled")
-			case <-time.After(1 * time.Second):
-			}
-		}
-	}
-}
-
 func TestWatchConfigChanges_ExitBySignalStopChannel(t *testing.T) {
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
 	mutatingWebhookConfigNames := []string{"protomutate"}
@@ -1467,6 +1287,450 @@ func TestWatchConfigChanges_ValidatingWebhookConfigChannel(t *testing.T) {
 	}
 }
 
+func TestGetCACert(t *testing.T) {
+	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
+	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
+	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
+	mutatingWebhookServiceNames := []string{"foo"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+		expectFail                    bool
+	}{
+		"getCACert should succeed for a valid certificate": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			namespace:                    "foo.ns",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			expectFail:                   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
+		// If the CA cert. is invalid, NewWebhookController will fail.
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if wc != nil && wc.K8sCaCertWatcher != nil {
+			defer wc.K8sCaCertWatcher.Close()
+		}
+		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
+			defer wc.MutatingWebhookFileWatcher.Close()
+		}
+		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
+			defer wc.ValidatingWebhookFileWatcher.Close()
+		}
+		if err != nil {
+			t.Fatalf("failed at creating webhook controller: %v", err)
+		}
+
+		cert, err := wc.getCACert()
+		if !tc.expectFail {
+			if err != nil {
+				t.Errorf("failed to get CA cert: %v", err)
+			} else if !bytes.Equal(cert, []byte(exampleCACert1)) {
+				t.Errorf("the CA certificate read does not match the actual certificate")
+			}
+		} else if err == nil {
+			t.Error("expect failure on getting CA cert but succeeded")
+		}
+	}
+}
+
+func TestGetServiceName(t *testing.T) {
+	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
+	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
+	mutatingWebhookServiceNames := []string{"foo", "bar"}
+	validatingWebhookServiceNames := []string{"baz"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookServiceNames   []string
+		mutatingWebhookServicePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+		scrtName                      string
+		expectFound                   bool
+		expectedSvcName               string
+	}{
+		"a mutating webhook service corresponding to a secret exists": {
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookServiceNames:  mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			scrtName:                     "istio.webhook.foo",
+			expectFound:                  true,
+			expectedSvcName:              "foo",
+		},
+		"a mutating service corresponding to a secret does not exists": {
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookServiceNames:  mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			scrtName:                     "istio.webhook.baz",
+			expectFound:                  false,
+			expectedSvcName:              "foo",
+		},
+		"a validating webhook service corresponding to a secret exists": {
+			gracePeriodRatio:              0.6,
+			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
+			mutatingWebhookServiceNames:   mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
+			validatingWebhookServiceNames: validatingWebhookServiceNames,
+			scrtName:                      "istio.webhook.baz",
+			expectFound:                   true,
+			expectedSvcName:               "baz",
+		},
+		"a validating webhook service corresponding to a secret does not exists": {
+			gracePeriodRatio:              0.6,
+			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
+			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
+			mutatingWebhookServiceNames:   mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
+			validatingWebhookServiceNames: validatingWebhookServiceNames,
+			scrtName:                      "istio.webhook.barr",
+			expectFound:                   false,
+			expectedSvcName:               "bar",
+		},
+	}
+
+	for _, tc := range testCases {
+		client := fake.NewSimpleClientset()
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookServiceNames, tc.mutatingWebhookServicePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if wc != nil && wc.K8sCaCertWatcher != nil {
+			defer wc.K8sCaCertWatcher.Close()
+		}
+		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
+			defer wc.MutatingWebhookFileWatcher.Close()
+		}
+		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
+			defer wc.ValidatingWebhookFileWatcher.Close()
+		}
+		if err != nil {
+			t.Errorf("failed to create a webhook controller: %v", err)
+		}
+
+		ret, found := wc.getServiceName(tc.scrtName)
+		if tc.expectFound != found {
+			t.Errorf("expected found (%v) differs from the actual found (%v)", tc.expectFound, found)
+			continue
+		}
+		if found && tc.expectedSvcName != ret {
+			t.Errorf("the service name (%v) returned is not as expcted (%v)", ret, tc.expectedSvcName)
+		}
+	}
+}
+
+func TestMonitorMutatingWebhookConfig(t *testing.T) {
+	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"protomutate"}
+	mutatingWebhookServiceNames := []string{"foo"}
+	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
+	validatingWebhookConfigNames := []string{"protovalidate"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+		scrtName                      string
+		createUnrelatedWebhookConfig  bool
+		expectChannelsignaled         bool
+	}{
+		"when mutating webhook config is created, the channel should be signaled": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			namespace:                    "foo.ns",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			scrtName:                     "istio.webhook.foo",
+			expectChannelsignaled:        true,
+		},
+		"when unrelated mutating webhook config is created, the channel should not be signaled": {
+			deleteWebhookConfigOnExit:    false,
+			gracePeriodRatio:             0.6,
+			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
+			namespace:                    "foo.ns",
+			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
+			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
+			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
+			validatingWebhookConfigNames: validatingWebhookConfigNames,
+			scrtName:                     "istio.webhook.foo",
+			createUnrelatedWebhookConfig: true,
+			expectChannelsignaled:        false,
+		},
+	}
+
+	for _, tc := range testCases {
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+
+		// TODO: move all clients inside for loop
+		client := fake.NewSimpleClientset()
+		whName := "unrelated-webhook-config"
+		whConfig := &v1beta1.MutatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: whName,
+			},
+		}
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if wc != nil && wc.K8sCaCertWatcher != nil {
+			defer wc.K8sCaCertWatcher.Close()
+		}
+		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
+			defer wc.MutatingWebhookFileWatcher.Close()
+		}
+		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
+			defer wc.ValidatingWebhookFileWatcher.Close()
+		}
+		if err != nil {
+			t.Fatalf("failed at creating webhook controller: %v", err)
+		}
+
+		webhookCh := wc.monitorMutatingWebhookConfig(wc.mutatingWebhookConfigNames[0], stopCh)
+		if webhookCh == nil {
+			t.Fatal("webhook channel returned by monitorMutatingWebhookConfig is nil")
+		}
+		defer close(webhookCh)
+
+		whClient := wc.admission.MutatingWebhookConfigurations()
+		if tc.createUnrelatedWebhookConfig {
+			// The default reactor does not use FieldSelector to select
+			// the resources matching the name of webhookconfiguration.
+			// So a custom reactor is used instead.
+			client.PrependReactor("create", "mutatingwebhookconfigurations", mutatingConfigReactionFunc(whConfig))
+			client.PrependReactor("get", "mutatingwebhookconfigurations", mutatingConfigReactionFunc(whConfig))
+			_, err = whClient.Create(whConfig)
+			if err != nil {
+				t.Fatalf("error when creating webhook config (%v): %v", whName, err)
+			}
+			_, err = whClient.Get(whName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("error when getting webhook config (%v): %v", whName, err)
+			}
+		} else {
+			err = wc.rebuildMutatingWebhookConfig()
+			if err != nil {
+				t.Fatalf("failed to rebuild MutatingWebhookConfiguration: %v", err)
+			}
+			err = createOrUpdateMutatingWebhookConfig(wc)
+			if err != nil {
+				t.Fatalf("error when creating or updating muatingwebhookconfiguration: %v", err)
+			}
+			webhookConfig := wc.mutatingWebhookConfig
+			_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
+			}
+		}
+
+		if tc.expectChannelsignaled {
+			select {
+			case <-webhookCh:
+			case <-time.After(1 * time.Second):
+				t.Errorf("the channel is not signaled in 1 second")
+			}
+		} else {
+			select {
+			case <-webhookCh:
+				t.Errorf("the channel should not be ignalled")
+			case <-time.After(1 * time.Second):
+			}
+		}
+	}
+}
+
+func TestMonitorValidatingWebhookConfig(t *testing.T) {
+	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
+	mutatingWebhookConfigNames := []string{"protomutate"}
+	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
+	validatingWebhookConfigNames := []string{"protovalidate"}
+	validatingWebhookServiceNames := []string{"foo"}
+
+	testCases := map[string]struct {
+		deleteWebhookConfigOnExit     bool
+		gracePeriodRatio              float32
+		minGracePeriod                time.Duration
+		k8sCaCertFile                 string
+		namespace                     string
+		mutatingWebhookConfigFiles    []string
+		mutatingWebhookConfigNames    []string
+		mutatingWebhookSerivceNames   []string
+		mutatingWebhookSerivcePorts   []int
+		validatingWebhookConfigFiles  []string
+		validatingWebhookConfigNames  []string
+		validatingWebhookServiceNames []string
+		validatingWebhookServicePorts []int
+		scrtName                      string
+		createUnrelatedWebhookConfig  bool
+		expectChannelsignaled         bool
+	}{
+		"when validating webhook config is created, the channel should be signaled": {
+			deleteWebhookConfigOnExit:     false,
+			gracePeriodRatio:              0.6,
+			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
+			namespace:                     "foo.ns",
+			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:    mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
+			validatingWebhookConfigNames:  validatingWebhookConfigNames,
+			validatingWebhookServiceNames: validatingWebhookServiceNames,
+			scrtName:                      "istio.webhook.foo",
+			expectChannelsignaled:         true,
+		},
+		"when unrelated validating webhook config is created, the channel should not be signaled": {
+			deleteWebhookConfigOnExit:     false,
+			gracePeriodRatio:              0.6,
+			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
+			namespace:                     "foo.ns",
+			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
+			mutatingWebhookConfigNames:    mutatingWebhookConfigNames,
+			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
+			validatingWebhookConfigNames:  validatingWebhookConfigNames,
+			validatingWebhookServiceNames: validatingWebhookServiceNames,
+			scrtName:                      "istio.webhook.foo",
+			createUnrelatedWebhookConfig:  true,
+			expectChannelsignaled:         false,
+		},
+	}
+
+	for _, tc := range testCases {
+		stopCh := make(chan struct{})
+		defer close(stopCh)
+
+		// TODO: move all clients inside for loop
+		client := fake.NewSimpleClientset()
+		whName := "unrelated-webhook-config"
+		whConfig := &v1beta1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: whName,
+			},
+		}
+		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
+			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
+			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
+			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
+			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
+		if wc != nil && wc.K8sCaCertWatcher != nil {
+			defer wc.K8sCaCertWatcher.Close()
+		}
+		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
+			defer wc.MutatingWebhookFileWatcher.Close()
+		}
+		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
+			defer wc.ValidatingWebhookFileWatcher.Close()
+		}
+		if err != nil {
+			t.Fatalf("failed at creating webhook controller: %v", err)
+		}
+
+		webhookCh := wc.monitorValidatingWebhookConfig(wc.validatingWebhookConfigNames[0], stopCh)
+		if webhookCh == nil {
+			t.Fatal("webhook channel returned by monitorValidatingWebhookConfig is nil")
+		}
+		defer close(webhookCh)
+
+		whClient := wc.admission.ValidatingWebhookConfigurations()
+		if tc.createUnrelatedWebhookConfig {
+			// The default reactor does not use FieldSelector to select
+			// the resources matching the name of webhookconfiguration.
+			// So a custom reactor is used instead.
+			client.PrependReactor("create", "validatingwebhookconfigurations", validatingConfigReactionFunc(whConfig))
+			client.PrependReactor("get", "validatingwebhookconfigurations", validatingConfigReactionFunc(whConfig))
+			_, err = whClient.Create(whConfig)
+			if err != nil {
+				t.Fatalf("error when creating webhook config (%v): %v", whName, err)
+			}
+			_, err = whClient.Get(whName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("error when getting webhook config (%v): %v", whName, err)
+			}
+		} else {
+			err = wc.rebuildValidatingWebhookConfig()
+			if err != nil {
+				t.Fatalf("failed to rebuild ValidatingWebhookConfiguration: %v", err)
+			}
+			err = createOrUpdateValidatingWebhookConfig(wc)
+			if err != nil {
+				t.Fatalf("error when creating or updating validatingwebhookconfiguration: %v", err)
+			}
+			webhookConfig := wc.validatingWebhookConfig
+			_, err = whClient.Get(webhookConfig.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("error when getting webhook config (%v): %v", webhookConfig.Name, err)
+			}
+		}
+
+		if tc.expectChannelsignaled {
+			select {
+			case <-webhookCh:
+			case <-time.After(1 * time.Second):
+				t.Errorf("the channel is not signaled in 1 second")
+			}
+		} else {
+			select {
+			case <-webhookCh:
+				t.Errorf("the channel should not be ignalled")
+			case <-time.After(1 * time.Second):
+			}
+		}
+	}
+}
+
 func TestRebuildMutatingWebhookConfig(t *testing.T) {
 	mutatingWebhookConfigFiles := []string{"./test-data/example-mutating-webhook-config.yaml"}
 	mutatingWebhookConfigNames := []string{"protomutate"}
@@ -1625,271 +1889,6 @@ func TestRebuildValidatingWebhookConfig(t *testing.T) {
 		if !reflect.DeepEqual(&config, wc.validatingWebhookConfig) {
 			t.Errorf("the ValidaingWebhookConfiguration is unexpected,"+
 				"expected: %v, actual: %v", config, wc.validatingWebhookConfig)
-		}
-	}
-}
-
-func TestGetCACert(t *testing.T) {
-	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
-	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
-	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
-	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
-	mutatingWebhookServiceNames := []string{"foo"}
-
-	testCases := map[string]struct {
-		deleteWebhookConfigOnExit     bool
-		gracePeriodRatio              float32
-		minGracePeriod                time.Duration
-		k8sCaCertFile                 string
-		namespace                     string
-		mutatingWebhookConfigFiles    []string
-		mutatingWebhookConfigNames    []string
-		mutatingWebhookSerivceNames   []string
-		mutatingWebhookSerivcePorts   []int
-		validatingWebhookConfigFiles  []string
-		validatingWebhookConfigNames  []string
-		validatingWebhookServiceNames []string
-		validatingWebhookServicePorts []int
-		expectFail                    bool
-	}{
-		"getCACert should succeed for a valid certificate": {
-			deleteWebhookConfigOnExit:    false,
-			gracePeriodRatio:             0.6,
-			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
-			namespace:                    "foo.ns",
-			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
-			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
-			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-			validatingWebhookConfigNames: validatingWebhookConfigNames,
-			expectFail:                   false,
-		},
-	}
-
-	for _, tc := range testCases {
-		client := fake.NewSimpleClientset()
-		// If the CA cert. is invalid, NewWebhookController will fail.
-		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
-			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
-			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
-			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
-			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
-		if wc != nil && wc.K8sCaCertWatcher != nil {
-			defer wc.K8sCaCertWatcher.Close()
-		}
-		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
-			defer wc.MutatingWebhookFileWatcher.Close()
-		}
-		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
-			defer wc.ValidatingWebhookFileWatcher.Close()
-		}
-		if err != nil {
-			t.Fatalf("failed at creating webhook controller: %v", err)
-		}
-
-		cert, err := wc.getCACert()
-		if !tc.expectFail {
-			if err != nil {
-				t.Errorf("failed to get CA cert: %v", err)
-			} else if !bytes.Equal(cert, []byte(exampleCACert1)) {
-				t.Errorf("the CA certificate read does not match the actual certificate")
-			}
-		} else if err == nil {
-			t.Error("expect failure on getting CA cert but succeeded")
-		}
-	}
-}
-
-func TestUpsertSecret(t *testing.T) {
-	validatingWebhookConfigFiles := []string{"./test-data/example-validating-webhook-config.yaml"}
-	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
-	mutatingWebhookConfigNames := []string{"mock-mutating-webook"}
-	validatingWebhookConfigNames := []string{"mock-validating-webhook"}
-	mutatingWebhookServiceNames := []string{"foo"}
-
-	testCases := map[string]struct {
-		deleteWebhookConfigOnExit     bool
-		gracePeriodRatio              float32
-		minGracePeriod                time.Duration
-		k8sCaCertFile                 string
-		namespace                     string
-		mutatingWebhookConfigFiles    []string
-		mutatingWebhookConfigNames    []string
-		mutatingWebhookSerivceNames   []string
-		mutatingWebhookSerivcePorts   []int
-		validatingWebhookConfigFiles  []string
-		validatingWebhookConfigNames  []string
-		validatingWebhookServiceNames []string
-		validatingWebhookServicePorts []int
-		scrtName                      string
-		expectFaill                   bool
-	}{
-		"upsert a valid secret name should succeed": {
-			deleteWebhookConfigOnExit:    false,
-			gracePeriodRatio:             0.6,
-			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
-			namespace:                    "foo.ns",
-			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
-			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
-			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-			validatingWebhookConfigNames: validatingWebhookConfigNames,
-			scrtName:                     "istio.webhook.foo",
-			expectFaill:                  false,
-		},
-		"upsert an invalid secret name should fail": {
-			deleteWebhookConfigOnExit:    false,
-			gracePeriodRatio:             0.6,
-			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
-			namespace:                    "bar.ns",
-			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			mutatingWebhookConfigNames:   mutatingWebhookConfigNames,
-			mutatingWebhookSerivceNames:  mutatingWebhookServiceNames,
-			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-			validatingWebhookConfigNames: validatingWebhookConfigNames,
-			scrtName:                     "istio.webhook.bar",
-			expectFaill:                  true,
-		},
-	}
-
-	for _, tc := range testCases {
-		client := fake.NewSimpleClientset()
-		csr := &cert.CertificateSigningRequest{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "domain-cluster.local-ns--secret-mock-secret",
-			},
-			Status: cert.CertificateSigningRequestStatus{
-				Certificate: []byte(exampleIssuedCert),
-			},
-		}
-		client.PrependReactor("get", "certificatesigningrequests", defaultReactionFunc(csr))
-
-		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
-			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
-			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
-			tc.mutatingWebhookSerivceNames, tc.mutatingWebhookSerivcePorts, tc.validatingWebhookConfigFiles,
-			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
-		if wc != nil && wc.K8sCaCertWatcher != nil {
-			defer wc.K8sCaCertWatcher.Close()
-		}
-		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
-			defer wc.MutatingWebhookFileWatcher.Close()
-		}
-		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
-			defer wc.ValidatingWebhookFileWatcher.Close()
-		}
-		if err != nil {
-			t.Errorf("failed at creating webhook controller: %v", err)
-			continue
-		}
-
-		err = wc.upsertSecret(tc.scrtName, tc.namespace)
-		if tc.expectFaill {
-			if err == nil {
-				t.Errorf("should have failed at upsertSecret")
-			}
-			continue
-		} else if err != nil {
-			t.Errorf("should not failed at upsertSecret, err: %v", err)
-		}
-	}
-}
-
-func TestGetServiceName(t *testing.T) {
-	mutatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
-	validatingWebhookConfigFiles := []string{"./test-data/empty-webhook-config.yaml"}
-	mutatingWebhookServiceNames := []string{"foo", "bar"}
-	validatingWebhookServiceNames := []string{"baz"}
-
-	testCases := map[string]struct {
-		deleteWebhookConfigOnExit     bool
-		gracePeriodRatio              float32
-		minGracePeriod                time.Duration
-		k8sCaCertFile                 string
-		namespace                     string
-		mutatingWebhookConfigFiles    []string
-		mutatingWebhookConfigNames    []string
-		mutatingWebhookServiceNames   []string
-		mutatingWebhookServicePorts   []int
-		validatingWebhookConfigFiles  []string
-		validatingWebhookConfigNames  []string
-		validatingWebhookServiceNames []string
-		validatingWebhookServicePorts []int
-		scrtName                      string
-		expectFound                   bool
-		expectedSvcName               string
-	}{
-		"a mutating webhook service corresponding to a secret exists": {
-			gracePeriodRatio:             0.6,
-			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
-			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			mutatingWebhookServiceNames:  mutatingWebhookServiceNames,
-			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-			scrtName:                     "istio.webhook.foo",
-			expectFound:                  true,
-			expectedSvcName:              "foo",
-		},
-		"a mutating service corresponding to a secret does not exists": {
-			gracePeriodRatio:             0.6,
-			k8sCaCertFile:                "./test-data/example-ca-cert.pem",
-			mutatingWebhookConfigFiles:   mutatingWebhookConfigFiles,
-			mutatingWebhookServiceNames:  mutatingWebhookServiceNames,
-			validatingWebhookConfigFiles: validatingWebhookConfigFiles,
-			scrtName:                     "istio.webhook.baz",
-			expectFound:                  false,
-			expectedSvcName:              "foo",
-		},
-		"a validating webhook service corresponding to a secret exists": {
-			gracePeriodRatio:              0.6,
-			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
-			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
-			mutatingWebhookServiceNames:   mutatingWebhookServiceNames,
-			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
-			validatingWebhookServiceNames: validatingWebhookServiceNames,
-			scrtName:                      "istio.webhook.baz",
-			expectFound:                   true,
-			expectedSvcName:               "baz",
-		},
-		"a validating webhook service corresponding to a secret does not exists": {
-			gracePeriodRatio:              0.6,
-			k8sCaCertFile:                 "./test-data/example-ca-cert.pem",
-			mutatingWebhookConfigFiles:    mutatingWebhookConfigFiles,
-			mutatingWebhookServiceNames:   mutatingWebhookServiceNames,
-			validatingWebhookConfigFiles:  validatingWebhookConfigFiles,
-			validatingWebhookServiceNames: validatingWebhookServiceNames,
-			scrtName:                      "istio.webhook.barr",
-			expectFound:                   false,
-			expectedSvcName:               "bar",
-		},
-	}
-
-	for _, tc := range testCases {
-		client := fake.NewSimpleClientset()
-		wc, err := NewWebhookController(tc.deleteWebhookConfigOnExit, tc.gracePeriodRatio, tc.minGracePeriod,
-			client.CoreV1(), client.AdmissionregistrationV1beta1(), client.CertificatesV1beta1(),
-			tc.k8sCaCertFile, tc.namespace, tc.mutatingWebhookConfigFiles, tc.mutatingWebhookConfigNames,
-			tc.mutatingWebhookServiceNames, tc.mutatingWebhookServicePorts, tc.validatingWebhookConfigFiles,
-			tc.validatingWebhookConfigNames, tc.validatingWebhookServiceNames, tc.validatingWebhookServicePorts)
-		if wc != nil && wc.K8sCaCertWatcher != nil {
-			defer wc.K8sCaCertWatcher.Close()
-		}
-		if wc != nil && wc.MutatingWebhookFileWatcher != nil {
-			defer wc.MutatingWebhookFileWatcher.Close()
-		}
-		if wc != nil && wc.ValidatingWebhookFileWatcher != nil {
-			defer wc.ValidatingWebhookFileWatcher.Close()
-		}
-		if err != nil {
-			t.Errorf("failed to create a webhook controller: %v", err)
-		}
-
-		ret, found := wc.getServiceName(tc.scrtName)
-		if tc.expectFound != found {
-			t.Errorf("expected found (%v) differs from the actual found (%v)", tc.expectFound, found)
-			continue
-		}
-		if found && tc.expectedSvcName != ret {
-			t.Errorf("the service name (%v) returned is not as expcted (%v)", ret, tc.expectedSvcName)
 		}
 	}
 }
