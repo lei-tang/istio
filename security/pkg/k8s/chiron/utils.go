@@ -316,6 +316,8 @@ func readSignedCertificate(certClient certclient.CertificateSigningRequestInterf
 }
 
 // Return signed CSR through a watcher. If no CSR is read, return nil.
+// The following nonlint is to fix the lint error: `certClient` can be `k8s.io/client-go/tools/cache.Watcher` (interfacer)
+// nolint: interfacer
 func readSignedCsr(certClient certclient.CertificateSigningRequestInterface, csrName string, timeout time.Duration) *cert.CertificateSigningRequest {
 	watcher, err := certClient.Watch(metav1.ListOptions{
 		FieldSelector: fields.OneTermEqualSelector("metadata.name", csrName).String(),
