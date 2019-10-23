@@ -1,15 +1,15 @@
 mkdir ~/temp/demo-10-25-2019
 cd ~/temp/demo-10-25-2019/
-wget https://storage.googleapis.com/istio-build/dev/1.5-alpha.021a8778fb589a5da924d32bf21eccf2959e8480/istio-1.5-alpha.021a8778fb589a5da924d32bf21eccf2959e8480-linux.tar.gz
-tar xfz istio-1.5-alpha.021a8778fb589a5da924d32bf21eccf2959e8480-linux.tar.gz
+wget https://storage.googleapis.com/istio-build/dev/1.5-alpha.021a8778fb589a5da924d32bf21eccf2959e8480/istio-1.5-alpha.021a8778fb589a5da924d32bf21eccf2959e8480-osx.tar.gz
+tar xfz istio-1.5-alpha.021a8778fb589a5da924d32bf21eccf2959e8480-osx.tar.gz
 cd istio-1.5-alpha.021a8778fb589a5da924d32bf21eccf2959e8480/
 
 gcloud container clusters get-credentials istio-test-10-8-2019 --zone us-central1-a --project lt-multicluster-test-1
 kubectl create namespace istio-system
 helm template install/kubernetes/helm/istio-init --name istio-init --namespace istio-system | kubectl apply -f -
 
-# Open http://localhost:1313/docs/tasks/security/webhook/
-# View the DNS certificate configurations values-istio-dns-cert.yaml at https://raw.githubusercontent.com/istio/istio/master/install/kubernetes/helm/istio/example-values/values-istio-dns-cert.yaml.
+# Open http://localhost:1313/docs/setup/install/webhook/
+# View the DNS certificate configurations values-istio-dns-cert.yaml at https://raw.githubusercontent.com/istio/istio/master/install/kubernetes/helm/istio/example-values/values-istio-dns-cert.yaml
 helm template \
     --name=istio \
     --namespace=istio-system \
@@ -25,12 +25,13 @@ kubectl apply -f istio-webhook-management.yaml
 GALLEY_POD=$(kubectl get pods --selector=app=galley -n istio-system --output=jsonpath={.items..metadata.name})
 kubectl exec -it $GALLEY_POD -n istio-system -- cat /var/run/secrets/kubernetes.io/serviceaccount/ca.crt > ca.crt;  openssl x509 -text -noout -in ca.crt
 # Check that webhook certificates have been generated and the issuer of webhook certificate matches the subject of k8s CA cert:
-kubectl get secret dns.istio-galley-service-account -n istio-system -o json | jq -r '.data["cert-chain.pem"]' | base64 --decode | openssl x509 -in - -text -noout
-kubectl get secret dns.istio-sidecar-injector-service-account -n istio-system -o json | jq -r '.data["cert-chain.pem"]' | base64 --decode | openssl x509 -in - -text -noout
+kubectl get secret dns.istio-galley-service-account -n istio-system -o json | jq -r '.data["cert-chain.pem"]' | base64 --decode > galley-cert.pem; openssl x509 -in galley-cert.pem -text -noout
+kubectl get secret dns.istio-sidecar-injector-service-account -n istio-system -o json | jq -r '.data["cert-chain.pem"]' | base64 --decode > sidecar-injector-cert.pem; openssl x509 -in sidecar-injector-cert.pem -text -noout
 # Check that Chiron will manage the lifecycle of a certificate, e.g., recover a deleted certificate.
 kubectl delete secret dns.istio-galley-service-account -n istio-system
-kubectl get secret dns.istio-galley-service-account -n istio-system -o json | jq -r '.data["cert-chain.pem"]' | base64 --decode | openssl x509 -in - -text -noout
+kubectl get secret dns.istio-galley-service-account -n istio-system -o json | jq -r '.data["cert-chain.pem"]' | base64 --decode > galley-cert.pem; openssl x509 -in galley-cert.pem -text -noout
 
+# Demo of istioctl managing webhooks
 # Check that there is no webhook configurations before running istioctl to enable webhook configurations.
 kubectl get validatingwebhookconfiguration
 kubectl get mutatingwebhookconfiguration
