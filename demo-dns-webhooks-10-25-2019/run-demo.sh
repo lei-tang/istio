@@ -5,6 +5,7 @@ tar xfz istio-1.5-alpha.021a8778fb589a5da924d32bf21eccf2959e8480-osx.tar.gz
 cd istio-1.5-alpha.021a8778fb589a5da924d32bf21eccf2959e8480/
 
 gcloud container clusters get-credentials istio-test-10-8-2019 --zone us-central1-a --project lt-multicluster-test-1
+
 kubectl create namespace istio-system
 helm template install/kubernetes/helm/istio-init --name istio-init --namespace istio-system | kubectl apply -f -
 
@@ -78,10 +79,8 @@ metadata:
   name: invalid-gateway
 spec:
   selector:
-    # DO NOT CHANGE THESE LABELS
-    # The ingressgateway is defined in install/kubernetes/helm/istio/values.yaml
-    # with these labels
     istio: ingressgateway
+  # This Gateway policy is invalid because it does not have server definitions. 
 EOF
 
 kubectl create namespace test-validation
