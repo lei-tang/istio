@@ -188,6 +188,8 @@ containers:
     {{ toYaml .Values.global.proxy.lifecycle | indent 4 }}
 {{- end }}
   env:
+  - name: PILOT_CERT_PROVIDER
+    value: {{ .Values.global.pilotCertProvider }}
   - name: POD_NAME
     valueFrom:
       fieldRef:
@@ -346,6 +348,10 @@ containers:
 {{- end }}
   {{  end -}}
   volumeMounts:
+  {{- if eq .Values.global.pilotCertProvider "citadel" }}
+  - mountPath: /etc/istio/citadel-ca-cert
+    name: citadel-ca-cert
+  {{- end }}
   {{ if (isset .ObjectMeta.Annotations `sidecar.istio.io/bootstrapOverride`) }}
   - mountPath: /etc/istio/custom-bootstrap
     name: custom-bootstrap-volume
@@ -380,6 +386,11 @@ containers:
     {{ end }}
     {{- end }}
 volumes:
+{{- if eq .Values.global.pilotCertProvider "citadel" }}
+- name: citadel-ca-cert
+  configMap:
+    name: istio-ca-root-cert
+{{- end }}
 {{- if (isset .ObjectMeta.Annotations `sidecar.istio.io/bootstrapOverride`) }}
 - name: custom-bootstrap-volume
   configMap:

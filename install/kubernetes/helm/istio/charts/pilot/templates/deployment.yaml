@@ -89,6 +89,8 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 5
           env:
+          - name: PILOT_CERT_PROVIDER
+            value: {{ .Values.global.pilotCertProvider }}
           - name: POD_NAME
             valueFrom:
               fieldRef:
@@ -170,6 +172,8 @@ spec:
           - --log_output_level={{ $.Values.global.logging.level }}
         {{- end}}
           env:
+          - name: PILOT_CERT_PROVIDER
+            value: {{ .Values.global.pilotCertProvider }}
           - name: POD_NAME
             valueFrom:
               fieldRef:

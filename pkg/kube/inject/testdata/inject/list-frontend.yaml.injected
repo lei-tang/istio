@@ -30,7 +30,7 @@ items:
       metadata:
         annotations:
           sidecar.istio.io/interceptionMode: REDIRECT
-          sidecar.istio.io/status: '{"version":"","initContainers":["istio-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-certs"],"imagePullSecrets":null}'
+          sidecar.istio.io/status: '{"version":"","initContainers":["istio-init"],"containers":["istio-proxy"],"volumes":["citadel-ca-cert","istio-envoy","istio-certs"],"imagePullSecrets":null}'
           traffic.sidecar.istio.io/excludeInboundPorts: "15020"
           traffic.sidecar.istio.io/includeOutboundIPRanges: '*'
         creationTimestamp: null
@@ -81,6 +81,8 @@ items:
           - --concurrency
           - "2"
           env:
+          - name: PILOT_CERT_PROVIDER
+            value: citadel
           - name: POD_NAME
             valueFrom:
               fieldRef:
@@ -156,6 +158,8 @@ items:
             runAsNonRoot: true
             runAsUser: 1337
           volumeMounts:
+          - mountPath: /etc/istio/citadel-ca-cert
+            name: citadel-ca-cert
           - mountPath: /etc/istio/proxy
             name: istio-envoy
           - mountPath: /etc/certs/
@@ -204,6 +208,9 @@ items:
             runAsNonRoot: false
             runAsUser: 0
         volumes:
+        - configMap:
+            name: istio-ca-root-cert
+          name: citadel-ca-cert
         - emptyDir:
             medium: Memory
           name: istio-envoy
