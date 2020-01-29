@@ -567,6 +567,13 @@ global:
   # Currently, two options are supported: "third-party-jwt" and "first-party-jwt".
   jwtPolicy: "third-party-jwt"
 
+  # Configure whether provisions a certificate to Prometheus.
+  # When this option is set as true, a sidecar is deployed along Prometheus to
+  # provision a certificate through SDS to Prometheus. The provisioned certificate
+  # is shared with Prometheus through mounted files.
+  # When this option is set as false, this certificate provisioning mechanism is disabled.
+  provisionPrometheusCert: true
+
 # Internal setting - used when generating helm templates for kustomize.
 # clusterResources controls the inclusion of cluster-wide resources when generating the charts/installing.
 # For backward compat, it is set to 'true', resulting in the old-style installation.

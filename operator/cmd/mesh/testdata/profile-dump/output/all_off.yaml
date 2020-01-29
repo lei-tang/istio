@@ -337,6 +337,7 @@ values:
     pilotCertProvider: citadel
     policyCheckFailOpen: false
     priorityClassName: ""
+    provisionPrometheusCert: true
     proxy:
       accessLogEncoding: TEXT
       accessLogFile: ""

@@ -229,6 +229,7 @@ spec:
         enableHttps: false
       pilotCertProvider: citadel
       jwtPolicy: third-party-jwt
+      provisionPrometheusCert: true
       proxy:
         image: proxyv2
         clusterDomain: "cluster.local"
