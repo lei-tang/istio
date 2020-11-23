@@ -20,6 +20,7 @@ import "context"
 type Caller struct {
 	AuthSource AuthSource
 	Identities []string
+	AuthenticatedAttributes map[string][]string
 }
 
 type Authenticator interface {
