@@ -16,8 +16,7 @@
 // under security/pkg/server/ca/authenticate/oidc.go in the following aspects:
 // - GenericJwtAuthenticator supports extracting JWT claims from JWT of different
 //   formats through its plugin mechanism.
-// - GenericJwtAuthenticator is not coupled with spiffe identity format ("spiffe://%s/ns/%s/sa/%s"),
-//   trust domain, namespace, sa.
+// - GenericJwtAuthenticator authenticates issuer and audience based on the user configuration.
 // - JwtAuthenticator in security/pkg/server/ca/authenticate/oidc.go is only used at CA
 //   and does not have unit tests.
 package jwtauth
@@ -112,7 +111,23 @@ func (j *GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authentica
 	//   Expected trust domain: istiod trust domain is from mesh config.
 	//   Actual trust domain: the trust domain claim in the JWT.
 	//   Trust domain is from sub claim in https://b.corp.google.com/issues/171317150
-
+	// - No change of code on istiod checkConnectionIdentity(), which validates the
+	//   service account and namespace in the spiffe id extracted matches those in the
+	//   proxy node metadata. Proxy node metadata are from the ISTIO_META_* env variables
+	//   defined on proxy when the proxy is deployed and included in the connection to
+	//   from proxy to istiod.
+	// - GenericJwtAuthenticator should be created and used in istiod. If configured to
+	//   use GenericJwtAuthenticator, it should be the only authenticator. Otherwise,
+	//   even if GenericJwtAuthenticator rejects a connection, other authenticators may
+	//   allow the connection.
+	//   The identities allowed are extracted in:
+	//   func (s *DiscoveryServer) authenticate(ctx context.Context) ([]string, error) {}
+	//   The authenticators used by XDS are configured in:
+	//   if features.XDSAuth {
+	//	    s.XDSServer.Authenticators = authenticators
+	//   }
+	//   A new environmental variable should be added to istiod to specify GenericJwtAuthenticator
+	//   as the only authenticator for s.XDSServer.Authenticators.
 	return &authenticate.Caller{
 		AuthSource: authenticate.AuthSourceIDToken,
 		Identities: []string{fmt.Sprintf(authenticate.IdentityTemplate, extractor.GetTrustDomain(),
