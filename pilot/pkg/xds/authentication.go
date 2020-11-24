@@ -30,9 +30,9 @@ import (
 // Returns the validated principals or an error.
 // If no authenticators are configured, or if the request is on a non-secure
 // stream ( 15010 ) - returns an empty list of principals and no errors.
-func (s *DiscoveryServer) authenticate(ctx context.Context) ([]string, map[string][]string, error) {
+func (s *DiscoveryServer) authenticate(ctx context.Context) ([]string, error) {
 	if !features.XDSAuth {
-		return nil, nil, nil
+		return nil, nil
 	}
 
 	// Authenticate - currently just checks that request has a certificate signed with the our key.
@@ -40,28 +40,24 @@ func (s *DiscoveryServer) authenticate(ctx context.Context) ([]string, map[strin
 	// XDS is exposed.
 	peerInfo, ok := peer.FromContext(ctx)
 	if !ok {
-		return nil, nil, errors.New("invalid context")
+		return nil, errors.New("invalid context")
 	}
 	// Not a TLS connection, we will not perform authentication
 	// TODO: add a flag to prevent unauthenticated requests ( 15010 )
 	// request not over TLS on the insecure port
 	if _, ok := peerInfo.AuthInfo.(credentials.TLSInfo); !ok {
-		return nil, nil, nil
+		return nil, nil
 	}
 	authFailMsgs := []string{}
 	for _, authn := range s.Authenticators {
 		u, err := authn.Authenticate(ctx)
 		// If one authenticator passes, return
 		if u != nil && u.Identities != nil && err == nil {
-			return u.Identities, nil, nil
-		}
-		// If authenticated-attributes-based authenticator passes, return
-		if u != nil && u.AuthenticatedAttributes != nil && err == nil {
-			return nil, u.AuthenticatedAttributes, nil
+			return u.Identities, nil
 		}
 		authFailMsgs = append(authFailMsgs, fmt.Sprintf("Authenticator %s: %v\n", authn.AuthenticatorType(), err))
 	}
 
 	adsLog.Error("Failed to authenticate client from ", peerInfo.Addr.String(), "\n", strings.Join(authFailMsgs, "; "))
-	return nil, nil, errors.New("authentication failure")
+	return nil, errors.New("authentication failure")
 }

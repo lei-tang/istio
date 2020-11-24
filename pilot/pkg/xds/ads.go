@@ -63,9 +63,6 @@ type Connection struct {
 	// Defines associated identities for the connection
 	Identities []string
 
-	// Defines authenticated attributes for the connection
-	AuthenticatedAttributes map[string][]string
-
 	// Time of connection, for debugging
 	Connect time.Time
 
@@ -237,14 +234,12 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream discovery.AggregatedD
 		peerAddr = peerInfo.Addr.String()
 	}
 
-	ids, attr, err := s.authenticate(ctx)
+	ids, err := s.authenticate(ctx)
 	if err != nil {
 		return err
 	}
 	if ids != nil {
 		adsLog.Debugf("Authenticated XDS: %v with identity %v", peerAddr, ids)
-	} else if attr != nil {
-		adsLog.Debugf("Authenticated XDS: %v with attributes %v", peerAddr, attr)
 	} else {
 		adsLog.Debug("Unauthenticated XDS: ", peerAddr)
 	}
@@ -258,7 +253,6 @@ func (s *DiscoveryServer) StreamAggregatedResources(stream discovery.AggregatedD
 	}
 	con := newConnection(peerAddr, stream)
 	con.Identities = ids
-	con.AuthenticatedAttributes = attr
 
 	// Do not call: defer close(con.pushChannel). The push channel will be garbage collected
 	// when the connection is no longer used. Closing the channel can cause subtle race conditions
@@ -501,9 +495,6 @@ func checkConnectionIdentity(con *Connection) (*spiffe.Identity, error) {
 			continue
 		}
 		return &spiffeID, nil
-	}
-	for _, _ := range con.AuthenticatedAttributes {
-		// Authenticate based on the authenticated attributes
 	}
 	return nil, fmt.Errorf("no identities (%v) matched %v/%v", con.Identities, con.proxy.ConfigNamespace, con.proxy.Metadata.ServiceAccount)
 }
