@@ -88,6 +88,13 @@ func (g *GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authentica
 	}
 
 	// TODO:
+	// - In tests:
+	//   -- Follow ~/go/src/github.com/coreos/go-oidc/jwks_test.go to
+	//   create a mocked jwks server that returns the public key for validating JWT.
+	//   -- Follow ~/go/src/github.com/coreos/go-oidc/verify_test.go to
+	//   test authenticating JWTs with invalid issuer, invalid audience, and invalid trust domain.
+	//   ~$ go test -v -run TestVerify github.com/coreos/go-oidc/...
+
 	// - Verify that the trust domain in the JWT is the same as the trust domain
 	//   of istiod. --> can be virtualized and implemented in plugin.
 	//   This verification ensures that a client with a JWT in trust domain foo
