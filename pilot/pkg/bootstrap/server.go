@@ -35,6 +35,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
+	"istio.io/istio/security/pkg/server/ca/authenticate/jwtauth"
+	"istio.io/pkg/env"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
@@ -82,6 +84,9 @@ var (
 		plugin.Authz,
 		plugin.Health,
 	}
+	jwtAuthenticatorType = env.RegisterStringVar("JWT_AUTHENTICATOR_TYPE", "",
+		"The type of JWT authenticator used by istiod authentication. "+
+			"The default value is empty, meaning that the default authenticators are used").Get()
 )
 
 const (
@@ -317,7 +322,15 @@ func NewServer(args *PilotArgs) (*Server, error) {
 
 	caOpts.Authenticators = authenticators
 	if features.XDSAuth {
-		s.XDSServer.Authenticators = authenticators
+		if jwtAuthenticatorType != "" {
+			authn, err := jwtauth.NewGenericJWTAuthenticator(jwtAuthenticatorType)
+			if err != nil {
+				return nil, fmt.Errorf("error creating JWT authenticator %v: %v", jwtAuthenticatorType, err)
+			}
+			s.XDSServer.Authenticators = []authenticate.Authenticator{authn}
+		} else {
+			s.XDSServer.Authenticators = authenticators
+		}
 	}
 
 	// Start CA or RA server. This should be called after CA and Istiod certs have been created.

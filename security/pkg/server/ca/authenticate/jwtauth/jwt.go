@@ -25,23 +25,16 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/coreos/go-oidc"
 	"istio.io/istio/security/pkg/server/ca/authenticate"
 	"istio.io/istio/security/pkg/server/ca/authenticate/jwtauth/plugin"
-	"istio.io/pkg/env"
 )
 
 const (
 	GenericJwtAuthenticatorType = "GenericJwtAuthenticator"
-	GkeJwtType = "GoogleKubernetesEngine"
+	GkeJwtType                  = "GoogleKubernetesEngine"
 )
 
-var (
-	jwtType = env.RegisterStringVar("JWT_TYPE", GkeJwtType,
-		"The type of JWT to authenticate. The default type is GoogleKubernetesEngine").Get()
-)
-
-type JwtExtractor interface {
+type JwtPlugin interface {
 	// GetIssuer returns issuer claim.
 	GetIssuer() string
 
@@ -56,66 +49,59 @@ type JwtExtractor interface {
 
 	// GetTrustDomain returns trust domain claim.
 	GetTrustDomain() string
+
+	// Authenticate returns nil if the authentication succeeds.
+	// Otherwise, returns the error.
+	Authenticate(ctx context.Context) error
 }
 
 type GenericJwtAuthenticator struct {
-	provider *oidc.Provider
-	verifier *oidc.IDTokenVerifier
+	plugin JwtPlugin
 }
 
 var _ authenticate.Authenticator = &GenericJwtAuthenticator{}
 
 // NewGenericJWTAuthenticator creates a new GenericJwtAuthenticator.
-func NewGenericJWTAuthenticator(iss string, audience string) (*GenericJwtAuthenticator, error) {
-	provider, err := oidc.NewProvider(context.Background(), iss)
-	if err != nil {
-		return nil, fmt.Errorf("running in cluster with K8S tokens, but failed to initialize %s %s", iss, err)
+func NewGenericJWTAuthenticator(jwtType string) (*GenericJwtAuthenticator, error) {
+	var p JwtPlugin
+	var err error
+	// If a new type of JWT is to be supported, create the corresponding plugin here
+	if jwtType == GkeJwtType {
+		p, err = plugin.NewGkeJwtPlugin()
+		if err != nil {
+			return nil, fmt.Errorf("failed at NewGkeJwtPlugin (error %v)", err)
+		}
+	} else {
+		return nil, fmt.Errorf("unsupported JWT authenticator type: %v", jwtType)
 	}
-
 	return &GenericJwtAuthenticator{
-		provider: provider,
-		verifier: provider.Verifier(&oidc.Config{ClientID: audience}),
+		plugin: p,
 	}, nil
 }
 
-// Authenticate - based on the old OIDC authenticator for mesh expansion.
-func (j *GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authenticate.Caller, error) {
-	bearerToken, err := authenticate.ExtractBearerToken(ctx)
+// Authenticate authenticates the JWT.
+func (g *GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authenticate.Caller, error) {
+	p := g.plugin
+	err := p.Authenticate(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("ID token extraction error: %v", err)
-	}
-
-	idToken, err := j.verifier.Verify(context.Background(), bearerToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed to verify the ID token (error %v)", err)
-	}
-
-	var extractor JwtExtractor
-	if jwtType == GkeJwtType {
-		extractor, err = plugin.NewGkeJwtExtractor(idToken)
-		if err != nil {
-			return nil, fmt.Errorf("failed at NewGkeJwtExtractor (error %v)", err)
-		}
-	} else {
-		return nil, fmt.Errorf("unsupported JWT type: %v", jwtType)
+		return nil, fmt.Errorf("the JWT authentication failed: %v", err)
 	}
 
 	// TODO:
-	// - https://b.corp.google.com/issues/171316378 to pass in public key url.
-	// - Verify that the audience and issuer in the JWT are as expected as those in
-	//   the environmental variables.
 	// - Verify that the trust domain in the JWT is the same as the trust domain
-	//   of istiod.
+	//   of istiod. --> can be virtualized and implemented in plugin.
 	//   This verification ensures that a client with a JWT in trust domain foo
 	//   can only access an istiod in the same trust domin.
 	//   Expected trust domain: istiod trust domain is from mesh config.
 	//   Actual trust domain: the trust domain claim in the JWT.
 	//   Trust domain is from sub claim in https://b.corp.google.com/issues/171317150
+
 	// - No change of code on istiod checkConnectionIdentity(), which validates the
 	//   service account and namespace in the spiffe id extracted matches those in the
 	//   proxy node metadata. Proxy node metadata are from the ISTIO_META_* env variables
 	//   defined on proxy when the proxy is deployed and included in the connection to
 	//   from proxy to istiod.
+
 	// - GenericJwtAuthenticator should be created and used in istiod. If configured to
 	//   use GenericJwtAuthenticator, it should be the only authenticator. Otherwise,
 	//   even if GenericJwtAuthenticator rejects a connection, other authenticators may
@@ -130,11 +116,11 @@ func (j *GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authentica
 	//   as the only authenticator for s.XDSServer.Authenticators.
 	return &authenticate.Caller{
 		AuthSource: authenticate.AuthSourceIDToken,
-		Identities: []string{fmt.Sprintf(authenticate.IdentityTemplate, extractor.GetTrustDomain(),
-			extractor.GetNamespace(), extractor.GetServiceAccount())},
+		Identities: []string{fmt.Sprintf(authenticate.IdentityTemplate, p.GetTrustDomain(),
+			p.GetNamespace(), p.GetServiceAccount())},
 	}, nil
 }
 
-func (j GenericJwtAuthenticator) AuthenticatorType() string {
+func (g GenericJwtAuthenticator) AuthenticatorType() string {
 	return GenericJwtAuthenticatorType
 }
