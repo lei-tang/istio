@@ -52,36 +52,37 @@ type GkeJwtPayload struct {
 	Serviceaccount string   `json:"serviceaccount"`
 }
 
-func NewGkeJwtPlugin() (jwtauth.JwtPlugin, error) {
-	return &GkeJwtPlugin{}, nil
+func NewGkeJwtPlugin() jwtauth.JwtPlugin {
+	return &GkeJwtPlugin{}
 }
 
 // GetIssuer returns issuer claim.
-func (g *GkeJwtPlugin) GetIssuer() string {
+func (g GkeJwtPlugin) GetIssuer() string {
 	return g.issuer
 }
 
 // GetAudience returns audience claim.
-func (g *GkeJwtPlugin) GetAudience() []string {
+func (g GkeJwtPlugin) GetAudience() []string {
 	return g.audience
 }
 
 // GetServiceAccount() returns service account claim.
-func (g *GkeJwtPlugin) GetServiceAccount() string {
+func (g GkeJwtPlugin) GetServiceAccount() string {
 	return g.serviceAccount
 }
 
 // GetNamespace() returns namespace claim.
-func (g *GkeJwtPlugin) GetNamespace() string {
+func (g GkeJwtPlugin) GetNamespace() string {
 	return g.nameSpace
 }
 
 // GetTrustDomain returns trust domain claim.
-func (g *GkeJwtPlugin) GetTrustDomain() string {
+func (g GkeJwtPlugin) GetTrustDomain() string {
 	return g.trustDomain
 }
 
 // Authenticate returns whether the JWT passes the authentication or not.
+// If the authentication succeeds, the JWT attributes are extracted.
 func (g *GkeJwtPlugin) Authenticate(ctx context.Context) error {
 	keySet := oidc.NewRemoteKeySet(ctx, jwksURL)
 	verifier := oidc.NewVerifier(issuerURL, keySet, &oidc.Config{ClientID: jwtAudience})

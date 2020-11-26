@@ -56,32 +56,28 @@ type JwtPlugin interface {
 }
 
 type GenericJwtAuthenticator struct {
-	plugin JwtPlugin
+	jwtType string
 }
 
 var _ authenticate.Authenticator = &GenericJwtAuthenticator{}
 
 // NewGenericJWTAuthenticator creates a new GenericJwtAuthenticator.
 func NewGenericJWTAuthenticator(jwtType string) (*GenericJwtAuthenticator, error) {
-	var p JwtPlugin
-	var err error
-	// If a new type of JWT is to be supported, create the corresponding plugin here
 	if jwtType == GkeJwtType {
-		p, err = plugin.NewGkeJwtPlugin()
-		if err != nil {
-			return nil, fmt.Errorf("failed at NewGkeJwtPlugin (error %v)", err)
-		}
+		return &GenericJwtAuthenticator{jwtType: jwtType}, nil
 	} else {
 		return nil, fmt.Errorf("unsupported JWT authenticator type: %v", jwtType)
 	}
-	return &GenericJwtAuthenticator{
-		plugin: p,
-	}, nil
 }
 
 // Authenticate authenticates the JWT.
-func (g *GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authenticate.Caller, error) {
-	p := g.plugin
+func (g GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authenticate.Caller, error) {
+	var p JwtPlugin
+	if g.jwtType == GkeJwtType {
+		p = plugin.NewGkeJwtPlugin()
+	} else {
+		return nil, fmt.Errorf("unsupported JWT authenticator type: %v", g.jwtType)
+	}
 	err := p.Authenticate(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("the JWT authentication failed: %v", err)
