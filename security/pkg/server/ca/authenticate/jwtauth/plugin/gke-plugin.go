@@ -17,6 +17,7 @@ package plugin
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	oidc "github.com/coreos/go-oidc"
 	"istio.io/istio/pkg/spiffe"
@@ -44,12 +45,18 @@ type GkeJwtPlugin struct {
 
 // GkeJwtPayload defines the claims to extract from the JWT
 type GkeJwtPayload struct {
-	Iss            string   `json:"iss"`
-	Sub            string   `json:"sub"`
-	Aud            []string `json:"aud"`
-	Exp            int      `json:"exp"`
-	Namespace      string   `json:"namespace"`
-	Serviceaccount string   `json:"serviceaccount"`
+	Iss string   `json:"iss"`
+	Sub string   `json:"sub"`
+	Aud []string `json:"aud"`
+	Exp int      `json:"exp"`
+}
+
+// GkeSubjectProperties includes the properties
+// extracted from a GKE subject claim.
+type GkeSubjectProperties struct {
+	Trustdomain string
+	Namespace   string
+	Name        string
 }
 
 func NewGkeJwtPlugin() jwtauth.JwtPlugin {
@@ -100,15 +107,36 @@ func (g *GkeJwtPlugin) Authenticate(ctx context.Context) error {
 	if err := token.Claims(p); err != nil {
 		return fmt.Errorf("failed to extract claims from the token: %v", err)
 	}
-	if p.Sub != spiffe.GetTrustDomain() {
+	subProp, err := ExtractGkeSubjectProperties(p.Sub)
+	if err != nil {
+		return fmt.Errorf("failed to extract subject properties: %v", err)
+	}
+	if subProp.Trustdomain != spiffe.GetTrustDomain() {
 		return fmt.Errorf("the trust domain (%v) in the JWT does not match the required trust domain (%v)",
-			p.Sub, spiffe.GetTrustDomain())
+			subProp.Trustdomain, spiffe.GetTrustDomain())
 	}
 
 	g.issuer = p.Iss
-	g.nameSpace = p.Namespace
-	g.serviceAccount = p.Serviceaccount
+	g.trustDomain = subProp.Trustdomain
+	g.nameSpace = subProp.Namespace
+	g.serviceAccount = subProp.Name
 	g.audience = p.Aud
-	g.trustDomain = p.Sub
 	return nil
+}
+
+// ExtractGkeSubjectProperties returns the subject properties (trust domain, namespace,
+// and service account) from a GKE subject.
+// For example, a k8s service account "foo" in the k8s namespace "bar" of trust domain "baz.svc.id.goog",
+// the subject claim is: baz.svc.id.goog[bar/foo]
+func ExtractGkeSubjectProperties(subject string) (*GkeSubjectProperties, error) {
+	// Named capturing is used for better code readability
+	re := regexp.MustCompile(`(?P<domain>[^.]+.svc.id.goog)\[(?P<ns>[^/]+)/(?P<sa>[^/]+)\]$`)
+	m := re.FindStringSubmatch(subject)
+	// When a match is found, there should be exactly four captures, i.e., entire matched string,
+	// trust domain, namespace, and name.
+	if len(m) != 4 {
+		return nil,
+			fmt.Errorf("subject (%v) is of unrecognized format; needs to be project.svc.id.goog[ns/sa]", subject)
+	}
+	return &GkeSubjectProperties{Trustdomain: m[1], Namespace: m[2], Name: m[3]}, nil
 }

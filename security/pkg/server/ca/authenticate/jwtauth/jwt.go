@@ -38,16 +38,16 @@ type JwtPlugin interface {
 	// GetIssuer returns issuer claim.
 	GetIssuer() string
 
-	// GetAudience returns audience claim.
+	// GetAudience returns the audience claim.
 	GetAudience() []string
 
-	// GetServiceAccount() returns service account claim.
+	// GetServiceAccount() returns the service account claim.
 	GetServiceAccount() string
 
-	// GetNamespace() returns namespace claim.
+	// GetNamespace() returns the namespace claim.
 	GetNamespace() string
 
-	// GetTrustDomain returns trust domain claim.
+	// GetTrustDomain returns the trust domain claim.
 	GetTrustDomain() string
 
 	// Authenticate returns nil if the authentication succeeds.
