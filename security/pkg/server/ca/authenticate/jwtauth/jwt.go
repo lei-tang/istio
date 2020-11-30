@@ -34,27 +34,6 @@ const (
 	GkeJwtType                  = "GoogleKubernetesEngine"
 )
 
-type JwtPlugin interface {
-	// GetIssuer returns issuer claim.
-	GetIssuer() string
-
-	// GetAudience returns the audience claim.
-	GetAudience() []string
-
-	// GetServiceAccount() returns the service account claim.
-	GetServiceAccount() string
-
-	// GetNamespace() returns the namespace claim.
-	GetNamespace() string
-
-	// GetTrustDomain returns the trust domain claim.
-	GetTrustDomain() string
-
-	// Authenticate returns nil if the authentication succeeds.
-	// Otherwise, returns the error.
-	Authenticate(ctx context.Context) error
-}
-
 type GenericJwtAuthenticator struct {
 	jwtType string
 }
@@ -72,7 +51,7 @@ func NewGenericJWTAuthenticator(jwtType string) (*GenericJwtAuthenticator, error
 
 // Authenticate authenticates the JWT.
 func (g GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authenticate.Caller, error) {
-	var p JwtPlugin
+	var p plugin.JwtPlugin
 	if g.jwtType == GkeJwtType {
 		p = plugin.NewGkeJwtPlugin()
 	} else {

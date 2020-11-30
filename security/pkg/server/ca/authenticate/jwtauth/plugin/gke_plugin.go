@@ -22,7 +22,6 @@ import (
 	oidc "github.com/coreos/go-oidc"
 	"istio.io/istio/pkg/spiffe"
 	"istio.io/istio/security/pkg/server/ca/authenticate"
-	"istio.io/istio/security/pkg/server/ca/authenticate/jwtauth"
 	"istio.io/pkg/env"
 )
 
@@ -59,7 +58,7 @@ type GkeSubjectProperties struct {
 	Name        string
 }
 
-func NewGkeJwtPlugin() jwtauth.JwtPlugin {
+func NewGkeJwtPlugin() JwtPlugin {
 	return &GkeJwtPlugin{}
 }
 
