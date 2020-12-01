@@ -15,23 +15,10 @@
 package plugin
 
 import (
-	"context"
 	"fmt"
 	"regexp"
 
 	oidc "github.com/coreos/go-oidc"
-	"istio.io/istio/pkg/spiffe"
-	"istio.io/istio/security/pkg/server/ca/authenticate"
-	"istio.io/pkg/env"
-)
-
-var (
-	jwksURL = env.RegisterStringVar("JWKS_URL", "",
-		"The URL of JSON Web Key Set (JWKS) used for JWT authentication").Get()
-	issuerURL = env.RegisterStringVar("ISSUER_URL", "",
-		"The URL of the JWT issuer").Get()
-	jwtAudience = env.RegisterStringVar("JWT_AUDIENCE", "",
-		"The JWT audience required by the JWT authentication").Get()
 )
 
 type GkeJwtPlugin struct {
@@ -87,21 +74,9 @@ func (g GkeJwtPlugin) GetTrustDomain() string {
 	return g.trustDomain
 }
 
-// Authenticate returns whether the JWT passes the authentication or not.
-// If the authentication succeeds, the JWT attributes are extracted.
-func (g *GkeJwtPlugin) Authenticate(ctx context.Context) error {
-	keySet := oidc.NewRemoteKeySet(ctx, jwksURL)
-	verifier := oidc.NewVerifier(issuerURL, keySet, &oidc.Config{ClientID: jwtAudience})
-
-	bearerToken, err := authenticate.ExtractBearerToken(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to extract bearer token: %v", err)
-	}
-	token, err := verifier.Verify(context.Background(), bearerToken)
-	if err != nil {
-		return fmt.Errorf("failed to verify the token: %v", err)
-	}
-
+// ExtractClaims extracts claims from the JWT token.
+// If the extraction fails, returns error. Otherwise, return nil.
+func (g *GkeJwtPlugin) ExtractClaims(token *oidc.IDToken) error {
 	p := &GkeJwtPayload{}
 	if err := token.Claims(p); err != nil {
 		return fmt.Errorf("failed to extract claims from the token: %v", err)
@@ -109,10 +84,6 @@ func (g *GkeJwtPlugin) Authenticate(ctx context.Context) error {
 	subProp, err := ExtractGkeSubjectProperties(p.Sub)
 	if err != nil {
 		return fmt.Errorf("failed to extract subject properties: %v", err)
-	}
-	if subProp.Trustdomain != spiffe.GetTrustDomain() {
-		return fmt.Errorf("the trust domain (%v) in the JWT does not match the required trust domain (%v)",
-			subProp.Trustdomain, spiffe.GetTrustDomain())
 	}
 
 	g.issuer = p.Iss

@@ -25,8 +25,19 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/coreos/go-oidc"
 	"istio.io/istio/security/pkg/server/ca/authenticate"
 	"istio.io/istio/security/pkg/server/ca/authenticate/jwtauth/plugin"
+	"istio.io/pkg/env"
+)
+
+var (
+	jwksURL = env.RegisterStringVar("JWKS_URL", "",
+		"The URL of JSON Web Key Set (JWKS) used for JWT authentication").Get()
+	issuerURL = env.RegisterStringVar("ISSUER_URL", "",
+		"The URL of the JWT issuer").Get()
+	jwtAudience = env.RegisterStringVar("JWT_AUDIENCE", "",
+		"The JWT audience required by the JWT authentication").Get()
 )
 
 const (
@@ -57,9 +68,20 @@ func (g GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authenticat
 	} else {
 		return nil, fmt.Errorf("unsupported JWT authenticator type: %v", g.jwtType)
 	}
-	err := p.Authenticate(ctx)
+
+	bearerToken, err := authenticate.ExtractBearerToken(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("the JWT authentication failed: %v", err)
+		return nil, fmt.Errorf("failed to extract bearer token: %v", err)
+	}
+	keySet := oidc.NewRemoteKeySet(ctx, jwksURL)
+	verifier := oidc.NewVerifier(issuerURL, keySet, &oidc.Config{ClientID: jwtAudience})
+	token, err := verifier.Verify(context.Background(), bearerToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify the token: %v", err)
+	}
+	err = p.ExtractClaims(token)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract claims: %v", err)
 	}
 
 	// TODO:

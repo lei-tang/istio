@@ -14,11 +14,13 @@
 
 package plugin
 
-import (
-	"context"
-)
+import "github.com/coreos/go-oidc"
 
 type JwtPlugin interface {
+	// ExtractClaims extracts claims from the JWT token.
+	// If the extraction fails, returns error. Otherwise, return nil.
+	ExtractClaims(token *oidc.IDToken) error
+
 	// GetIssuer returns issuer claim.
 	GetIssuer() string
 
@@ -33,8 +35,4 @@ type JwtPlugin interface {
 
 	// GetTrustDomain returns the trust domain claim.
 	GetTrustDomain() string
-
-	// Authenticate returns nil if the authentication succeeds.
-	// Otherwise, returns the error.
-	Authenticate(ctx context.Context) error
 }
