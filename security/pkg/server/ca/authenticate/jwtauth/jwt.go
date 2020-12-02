@@ -42,7 +42,7 @@ var (
 
 const (
 	GenericJwtAuthenticatorType = "GenericJwtAuthenticator"
-	GkeJwtType                  = "GoogleKubernetesEngine"
+	GkeJwtType                  = "GKE_JWT"
 )
 
 type GenericJwtAuthenticator struct {

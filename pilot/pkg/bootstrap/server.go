@@ -84,9 +84,9 @@ var (
 		plugin.Authz,
 		plugin.Health,
 	}
-	jwtAuthenticatorType = env.RegisterStringVar("JWT_AUTHENTICATOR_TYPE", "",
-		"The type of JWT authenticator used by istiod authentication. "+
-			"The default value is empty, meaning that the default authenticators are used").Get()
+	jwtType = env.RegisterStringVar("JWT_TYPE", "",
+		"The type of JWT used by istiod authentication. "+
+			"Example JWT types include: GKE_JWT.").Get()
 )
 
 const (
@@ -322,10 +322,10 @@ func NewServer(args *PilotArgs) (*Server, error) {
 
 	caOpts.Authenticators = authenticators
 	if features.XDSAuth {
-		if jwtAuthenticatorType != "" {
-			authn, err := jwtauth.NewGenericJWTAuthenticator(jwtAuthenticatorType)
+		if jwtType != "" {
+			authn, err := jwtauth.NewGenericJWTAuthenticator(jwtType)
 			if err != nil {
-				return nil, fmt.Errorf("error creating JWT authenticator %v: %v", jwtAuthenticatorType, err)
+				return nil, fmt.Errorf("error creating JWT authenticator %v: %v", jwtType, err)
 			}
 			s.XDSServer.Authenticators = []authenticate.Authenticator{authn}
 		} else {
