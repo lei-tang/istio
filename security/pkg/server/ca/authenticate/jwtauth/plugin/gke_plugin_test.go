@@ -1,8 +1,90 @@
 package plugin
 
 import (
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"fmt"
 	"testing"
+	"time"
+
+	"github.com/coreos/go-oidc"
+	"gopkg.in/square/go-jose.v2"
 )
+
+func TestExtractClaims(t *testing.T) {
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 512)
+	if err != nil {
+		t.Errorf("failed to generate a private key: %v", err)
+		return
+	}
+	expStr := fmt.Sprintf("%d", time.Now().Add(600*time.Second).UnixNano())
+	key := jose.JSONWebKey{Algorithm: string(jose.RS256), Key: rsaKey}
+	tests := []struct {
+		name      string
+		expectErr bool
+		issuer    string
+		claims    string
+	}{
+		{
+			name:      "valid token",
+			expectErr: false,
+			issuer:    "http://issuer",
+			claims: `{"iss": "http://issuer", "aud": ["audience"], "sub": "baz.svc.id.goog[bar/foo]", "exp": ` +
+				expStr + `}`,
+		},
+		{
+			name:      "invalid token (missing subject)",
+			expectErr: true,
+			issuer:    "http://issuer",
+			claims:    `{"iss": "http://issuer", "aud": ["audience"], "exp": ` + expStr + `}`,
+		},
+		{
+			name:      "invalid token (invalid subject)",
+			expectErr: true,
+			issuer:    "http://issuer",
+			claims: `{"iss": "http://issuer", "aud": ["audience"], "sub": "baz.svc.id.googbar/foo]", "exp": ` +
+				expStr + `}`,
+		},
+		{
+			name:      "invalid token (invalid issuer)",
+			expectErr: true,
+			issuer:    "http://issuer",
+			claims: `{"iss": "invalid", "aud": ["audience"], "sub": "baz.svc.id.goog[bar/foo]", "exp": ` +
+				expStr + `}`,
+		},
+		{
+			name:      "invalid token (missing expiration time)",
+			expectErr: true,
+			issuer:    "http://issuer",
+			claims:    `{"iss": "http://issuer", "aud": ["audience"], "sub": "baz.svc.id.goog[bar/foo]"}`,
+		},
+		{
+			name:      "invalid token (JWT expired)",
+			expectErr: true,
+			issuer:    "http://issuer",
+			claims:    `{"iss": "http://issuer", "aud": ["audience"], "sub": "baz.svc.id.goog[bar/foo]", "exp":12345678}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewGkeJwtPlugin()
+			token, err := generateIDToken(&key, tt.issuer, tt.claims)
+			if err != nil {
+				if !tt.expectErr {
+					t.Errorf("failed to generate an IDToken: %v", err)
+				}
+				return
+			}
+			err = p.ExtractClaims(token)
+			gotErr := err != nil
+			if gotErr != tt.expectErr {
+				t.Errorf("expect error is %v while actual error is %v", tt.expectErr, gotErr)
+			}
+		})
+	}
+}
 
 func TestExtractGkeSubjectProperties(t *testing.T) {
 	subject := "baz.svc.id.goog[bar/foo]"
@@ -53,4 +135,44 @@ func TestExtractGkeSubjectProperties(t *testing.T) {
 			}
 		})
 	}
+}
+
+func generateJWT(key *jose.JSONWebKey, claims []byte) (string, error) {
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.SignatureAlgorithm(key.Algorithm),
+		Key: key}, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create a signer: %v", err)
+	}
+	signature, err := signer.Sign(claims)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign claims: %v", err)
+	}
+	jwt, err := signature.CompactSerialize()
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize the JWT: %v", err)
+	}
+	return jwt, nil
+}
+
+type jwtSignatureVerifier struct {
+	key *jose.JSONWebKey
+}
+
+func (j *jwtSignatureVerifier) VerifySignature(ctx context.Context, jwt string) ([]byte, error) {
+	sign, err := jose.ParseSigned(jwt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse the JWT: %v", err)
+	}
+	return sign.Verify(j.key)
+}
+
+func generateIDToken(key *jose.JSONWebKey, issuer, claims string) (*oidc.IDToken, error) {
+	jwt, err := generateJWT(key, []byte(claims))
+	if err != nil {
+		return nil, err
+	}
+	pubKey := key.Public()
+	verifySig := &jwtSignatureVerifier{key: &pubKey}
+	verifier := oidc.NewVerifier(issuer, verifySig, &oidc.Config{SkipClientIDCheck: true})
+	return verifier.Verify(context.Background(), jwt)
 }
