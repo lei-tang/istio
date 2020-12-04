@@ -12,13 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// GenericJwtAuthenticator is different from JwtAuthenticator
-// under security/pkg/server/ca/authenticate/oidc.go in the following aspects:
-// - GenericJwtAuthenticator supports extracting JWT claims from JWT of different
-//   formats through its plugin mechanism.
-// - GenericJwtAuthenticator authenticates issuer and audience based on the user configuration.
-// - JwtAuthenticator in security/pkg/server/ca/authenticate/oidc.go is only used at CA
-//   and does not have unit tests.
 package jwtauth
 
 import (
@@ -45,6 +38,16 @@ const (
 	GkeJwtType                  = "GKE_JWT"
 )
 
+// GenericJwtAuthenticator is different from JwtAuthenticator
+// under security/pkg/server/ca/authenticate/oidc.go in the following aspects:
+// - oidc.go only supports JWT issued by k8s API server with subject HasPrefix(sa.Sub, "system:serviceaccount").
+// - GenericJwtAuthenticator supports extracting JWT claims from JWT of different
+//   formats through its plugin mechanism.
+// - security/pkg/server/ca/authenticate/oidc.go uses OIDC discovery to get the json web key set.
+//   whereas GenericJwtAuthenticator uses the URL of public key server to fetch public key, which
+//   works for the server that does not support OIDC discovery, e.g., google service account public key.
+// - JwtAuthenticator in security/pkg/server/ca/authenticate/oidc.go is only used at CA
+//   and does not have unit tests.
 type GenericJwtAuthenticator struct {
 	jwtType string
 }
