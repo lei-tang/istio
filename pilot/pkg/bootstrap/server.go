@@ -87,6 +87,12 @@ var (
 	jwtType = env.RegisterStringVar("JWT_TYPE", "",
 		"The type of JWT used by istiod authentication. "+
 			"Example JWT types include: GKE_JWT.").Get()
+	jwksURL = env.RegisterStringVar("ISTIOD_JWT_JWKS_URI", "",
+		"The URL of JSON Web Key Set (JWKS) used for istiod JWT authentication").Get()
+	jwtIssuerURL = env.RegisterStringVar("ISTIOD_JWT_ISSUER_URI", "",
+		"The URL of the istiod JWT issuer").Get()
+	jwtAudience = env.RegisterStringVar("ISTIOD_JWT_AUDIENCE", "",
+		"The JWT audience required by the istiod JWT authentication. A single audience can be specified.").Get()
 )
 
 const (
@@ -323,7 +329,7 @@ func NewServer(args *PilotArgs) (*Server, error) {
 	caOpts.Authenticators = authenticators
 	if features.XDSAuth {
 		if jwtType != "" {
-			authn, err := jwtauth.NewGenericJWTAuthenticator(jwtType)
+			authn, err := jwtauth.NewGenericJWTAuthenticator(jwtType, jwtIssuerURL, jwtAudience)
 			if err != nil {
 				return nil, fmt.Errorf("error creating JWT authenticator %v: %v", jwtType, err)
 			}

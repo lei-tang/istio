@@ -49,15 +49,17 @@ const (
 // - JwtAuthenticator in security/pkg/server/ca/authenticate/oidc.go is only used at CA
 //   and does not have unit tests.
 type GenericJwtAuthenticator struct {
-	jwtType string
+	jwtType     string
+	issuerURL   string
+	jwtAudience string
 }
 
 var _ authenticate.Authenticator = &GenericJwtAuthenticator{}
 
 // NewGenericJWTAuthenticator creates a new GenericJwtAuthenticator.
-func NewGenericJWTAuthenticator(jwtType string) (*GenericJwtAuthenticator, error) {
+func NewGenericJWTAuthenticator(jwtType, issuerURL, jwtAudience string) (*GenericJwtAuthenticator, error) {
 	if jwtType == GkeJwtType {
-		return &GenericJwtAuthenticator{jwtType: jwtType}, nil
+		return &GenericJwtAuthenticator{jwtType: jwtType, issuerURL: issuerURL, jwtAudience: jwtAudience}, nil
 	} else {
 		return nil, fmt.Errorf("unsupported JWT authenticator type: %v", jwtType)
 	}
