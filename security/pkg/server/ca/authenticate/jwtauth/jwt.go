@@ -32,12 +32,12 @@ import (
 )
 
 var (
-	jwksURL = env.RegisterStringVar("JWT_JWKS_URI", "",
-		"The URL of JSON Web Key Set (JWKS) used for JWT authentication").Get()
-	issuerURL = env.RegisterStringVar("JWT_ISSUER_URI", "",
-		"The URL of the JWT issuer").Get()
-	jwtAudience = env.RegisterStringVar("JWT_AUDIENCE", "",
-		"The JWT audience required by the JWT authentication. A single audience can be specified.").Get()
+	jwksURL = env.RegisterStringVar("ISTIOD_JWT_JWKS_URI", "",
+		"The URL of JSON Web Key Set (JWKS) used for istiod JWT authentication").Get()
+	issuerURL = env.RegisterStringVar("ISTIOD_JWT_ISSUER_URI", "",
+		"The URL of the istiod JWT issuer").Get()
+	jwtAudience = env.RegisterStringVar("ISTIOD_JWT_AUDIENCE", "",
+		"The JWT audience required by the istiod JWT authentication. A single audience can be specified.").Get()
 )
 
 const (
