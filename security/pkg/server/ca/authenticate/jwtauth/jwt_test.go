@@ -37,7 +37,7 @@ func TestNewGenericJWTAuthenticator(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewGenericJWTAuthenticator(tt.jwtType, "issuer", "audience")
+			_, err := NewGenericJWTAuthenticator(tt.jwtType, "jwks_url", "issuer", "audience")
 			gotErr := err != nil
 			if gotErr != tt.expectErr {
 				t.Errorf("expect error is %v while actual error is %v", tt.expectErr, gotErr)

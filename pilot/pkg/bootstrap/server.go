@@ -329,7 +329,7 @@ func NewServer(args *PilotArgs) (*Server, error) {
 	caOpts.Authenticators = authenticators
 	if features.XDSAuth {
 		if jwtType != "" {
-			authn, err := jwtauth.NewGenericJWTAuthenticator(jwtType, jwtIssuerURL, jwtAudience)
+			authn, err := jwtauth.NewGenericJWTAuthenticator(jwtType, jwksURL, jwtIssuerURL, jwtAudience)
 			if err != nil {
 				return nil, fmt.Errorf("error creating JWT authenticator %v: %v", jwtType, err)
 			}

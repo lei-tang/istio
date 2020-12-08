@@ -21,16 +21,6 @@ import (
 	"github.com/coreos/go-oidc"
 	"istio.io/istio/security/pkg/server/ca/authenticate"
 	"istio.io/istio/security/pkg/server/ca/authenticate/jwtauth/plugin"
-	"istio.io/pkg/env"
-)
-
-var (
-	jwksURL = env.RegisterStringVar("ISTIOD_JWT_JWKS_URI", "",
-		"The URL of JSON Web Key Set (JWKS) used for istiod JWT authentication").Get()
-	issuerURL = env.RegisterStringVar("ISTIOD_JWT_ISSUER_URI", "",
-		"The URL of the istiod JWT issuer").Get()
-	jwtAudience = env.RegisterStringVar("ISTIOD_JWT_AUDIENCE", "",
-		"The JWT audience required by the istiod JWT authentication. A single audience can be specified.").Get()
 )
 
 const (
@@ -50,6 +40,7 @@ const (
 //   and does not have unit tests.
 type GenericJwtAuthenticator struct {
 	jwtType     string
+	jwksURL     string
 	issuerURL   string
 	jwtAudience string
 }
@@ -57,9 +48,9 @@ type GenericJwtAuthenticator struct {
 var _ authenticate.Authenticator = &GenericJwtAuthenticator{}
 
 // NewGenericJWTAuthenticator creates a new GenericJwtAuthenticator.
-func NewGenericJWTAuthenticator(jwtType, issuerURL, jwtAudience string) (*GenericJwtAuthenticator, error) {
+func NewGenericJWTAuthenticator(jwtType, jwksURL, issuerURL, jwtAudience string) (*GenericJwtAuthenticator, error) {
 	if jwtType == GkeJwtType {
-		return &GenericJwtAuthenticator{jwtType: jwtType, issuerURL: issuerURL, jwtAudience: jwtAudience}, nil
+		return &GenericJwtAuthenticator{jwtType: jwtType, jwksURL: jwksURL, issuerURL: issuerURL, jwtAudience: jwtAudience}, nil
 	} else {
 		return nil, fmt.Errorf("unsupported JWT authenticator type: %v", jwtType)
 	}
@@ -78,8 +69,8 @@ func (g GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authenticat
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract bearer token: %v", err)
 	}
-	keySet := oidc.NewRemoteKeySet(ctx, jwksURL)
-	verifier := oidc.NewVerifier(issuerURL, keySet, &oidc.Config{ClientID: jwtAudience})
+	keySet := oidc.NewRemoteKeySet(ctx, g.jwksURL)
+	verifier := oidc.NewVerifier(g.issuerURL, keySet, &oidc.Config{ClientID: g.jwtAudience})
 	token, err := verifier.Verify(context.Background(), bearerToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify the token: %v", err)
