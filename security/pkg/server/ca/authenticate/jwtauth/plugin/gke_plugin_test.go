@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
@@ -9,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coreos/go-oidc"
 	"gopkg.in/square/go-jose.v2"
+	"istio.io/istio/security/pkg/server/ca/authenticate/jwtauth"
 )
 
 func TestExtractClaims(t *testing.T) {
@@ -70,7 +69,7 @@ func TestExtractClaims(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewGkeJwtPlugin()
-			token, err := generateIDToken(&key, tt.issuer, tt.claims)
+			token, err := jwtauth.GenerateIDToken(&key, tt.issuer, tt.claims)
 			if err != nil {
 				if !tt.expectErr {
 					t.Errorf("failed to generate an IDToken: %v", err)
@@ -96,7 +95,7 @@ func TestGetIssuer(t *testing.T) {
 	claims := `{"iss": "http://issuer", "aud": ["audience"], "sub": "baz.svc.id.goog[bar/foo]", "exp": ` +
 		expStr + `}`
 	p := NewGkeJwtPlugin()
-	token, err := generateIDToken(&key, "http://issuer", claims)
+	token, err := jwtauth.GenerateIDToken(&key, "http://issuer", claims)
 	if err != nil {
 		t.Fatalf("failed to generate an IDToken: %v", err)
 	}
@@ -120,7 +119,7 @@ func TestGetAudience(t *testing.T) {
 	claims := `{"iss": "http://issuer", "aud": ["audience"], "sub": "baz.svc.id.goog[bar/foo]", "exp": ` +
 		expStr + `}`
 	p := NewGkeJwtPlugin()
-	token, err := generateIDToken(&key, "http://issuer", claims)
+	token, err := jwtauth.GenerateIDToken(&key, "http://issuer", claims)
 	if err != nil {
 		t.Fatalf("failed to generate an IDToken: %v", err)
 	}
@@ -144,7 +143,7 @@ func TestGetServiceAccount(t *testing.T) {
 	claims := `{"iss": "http://issuer", "aud": ["audience"], "sub": "baz.svc.id.goog[bar/foo]", "exp": ` +
 		expStr + `}`
 	p := NewGkeJwtPlugin()
-	token, err := generateIDToken(&key, "http://issuer", claims)
+	token, err := jwtauth.GenerateIDToken(&key, "http://issuer", claims)
 	if err != nil {
 		t.Fatalf("failed to generate an IDToken: %v", err)
 	}
@@ -168,7 +167,7 @@ func TestGetNamespace(t *testing.T) {
 	claims := `{"iss": "http://issuer", "aud": ["audience"], "sub": "baz.svc.id.goog[bar/foo]", "exp": ` +
 		expStr + `}`
 	p := NewGkeJwtPlugin()
-	token, err := generateIDToken(&key, "http://issuer", claims)
+	token, err := jwtauth.GenerateIDToken(&key, "http://issuer", claims)
 	if err != nil {
 		t.Fatalf("failed to generate an IDToken: %v", err)
 	}
@@ -192,7 +191,7 @@ func TestGetTrustDomain(t *testing.T) {
 	claims := `{"iss": "http://issuer", "aud": ["audience"], "sub": "baz.svc.id.goog[bar/foo]", "exp": ` +
 		expStr + `}`
 	p := NewGkeJwtPlugin()
-	token, err := generateIDToken(&key, "http://issuer", claims)
+	token, err := jwtauth.GenerateIDToken(&key, "http://issuer", claims)
 	if err != nil {
 		t.Fatalf("failed to generate an IDToken: %v", err)
 	}
@@ -255,44 +254,4 @@ func TestExtractGkeSubjectProperties(t *testing.T) {
 			}
 		})
 	}
-}
-
-func generateJWT(key *jose.JSONWebKey, claims []byte) (string, error) {
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.SignatureAlgorithm(key.Algorithm),
-		Key: key}, nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to create a signer: %v", err)
-	}
-	signature, err := signer.Sign(claims)
-	if err != nil {
-		return "", fmt.Errorf("failed to sign claims: %v", err)
-	}
-	jwt, err := signature.CompactSerialize()
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize the JWT: %v", err)
-	}
-	return jwt, nil
-}
-
-type jwtSignatureVerifier struct {
-	key *jose.JSONWebKey
-}
-
-func (j *jwtSignatureVerifier) VerifySignature(ctx context.Context, jwt string) ([]byte, error) {
-	sign, err := jose.ParseSigned(jwt)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse the JWT: %v", err)
-	}
-	return sign.Verify(j.key)
-}
-
-func generateIDToken(key *jose.JSONWebKey, issuer, claims string) (*oidc.IDToken, error) {
-	jwt, err := generateJWT(key, []byte(claims))
-	if err != nil {
-		return nil, err
-	}
-	pubKey := key.Public()
-	verifySig := &jwtSignatureVerifier{key: &pubKey}
-	verifier := oidc.NewVerifier(issuer, verifySig, &oidc.Config{SkipClientIDCheck: true})
-	return verifier.Verify(context.Background(), jwt)
 }

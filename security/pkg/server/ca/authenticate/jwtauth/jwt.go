@@ -43,14 +43,15 @@ type GenericJwtAuthenticator struct {
 	jwksURL     string
 	issuerURL   string
 	jwtAudience string
+	trustDomain string
 }
 
 var _ authenticate.Authenticator = &GenericJwtAuthenticator{}
 
 // NewGenericJWTAuthenticator creates a new GenericJwtAuthenticator.
-func NewGenericJWTAuthenticator(jwtType, jwksURL, issuerURL, jwtAudience string) (*GenericJwtAuthenticator, error) {
+func NewGenericJWTAuthenticator(jwtType, jwksURL, issuerURL, jwtAudience, trustDomain string) (*GenericJwtAuthenticator, error) {
 	if jwtType == GkeJwtType {
-		return &GenericJwtAuthenticator{jwtType: jwtType, jwksURL: jwksURL, issuerURL: issuerURL, jwtAudience: jwtAudience}, nil
+		return &GenericJwtAuthenticator{jwtType: jwtType, jwksURL: jwksURL, issuerURL: issuerURL, jwtAudience: jwtAudience, trustDomain: trustDomain}, nil
 	} else {
 		return nil, fmt.Errorf("unsupported JWT authenticator type: %v", jwtType)
 	}
@@ -114,6 +115,10 @@ func (g GenericJwtAuthenticator) Authenticate(ctx context.Context) (*authenticat
 	//   }
 	//   A new environmental variable should be added to istiod to specify GenericJwtAuthenticator
 	//   as the only authenticator for s.XDSServer.Authenticators.
+	if p.GetTrustDomain() != g.trustDomain {
+		return nil, fmt.Errorf("the trust domain (%v) in the JWT does not match the required trust domain (%v)",
+			p.GetTrustDomain(), g.trustDomain)
+	}
 	return &authenticate.Caller{
 		AuthSource: authenticate.AuthSourceIDToken,
 		Identities: []string{fmt.Sprintf(authenticate.IdentityTemplate, p.GetTrustDomain(),

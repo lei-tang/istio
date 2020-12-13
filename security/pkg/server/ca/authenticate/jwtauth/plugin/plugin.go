@@ -19,6 +19,8 @@ import "github.com/coreos/go-oidc"
 type JwtPlugin interface {
 	// ExtractClaims extracts claims from the JWT token.
 	// If the extraction fails, returns error. Otherwise, return nil.
+	// ExtractClaims should be called before calling the getter interfaces
+	// (e.g., GetIssuer(), etc)
 	ExtractClaims(token *oidc.IDToken) error
 
 	// GetIssuer returns issuer claim.
